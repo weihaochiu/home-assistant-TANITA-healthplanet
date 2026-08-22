@@ -1,0 +1,50 @@
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["custom_components/tanita_healthplanet"]
+
+[tool.coverage.report]
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+]
+fail_under = 75
+show_missing = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+include = [
+  "custom_components/tanita_healthplanet/*.py",
+  "tests/test_config_flow*.py",
+  "tests/test_ha_*.py",
+  "tests/test_hacs_structure.py",
+  "tests/test_production_*.py",
+]
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "E", "F", "I", "SIM", "UP"]
+
+[tool.mypy]
+python_version = "3.14"
+check_untyped_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = [
+  "custom_components.tanita_healthplanet.config_flow",
+  "tanita_healthplanet.config_flow",
+]
+# Home Assistant registers the domain through a dynamic __init_subclass__ hook.
+disable_error_code = ["call-arg"]

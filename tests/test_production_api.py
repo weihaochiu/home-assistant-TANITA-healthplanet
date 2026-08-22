@@ -1,0 +1,254 @@
+from __future__ import annotations
+
+import asyncio
+import json
+
+import pytest
+
+from custom_components.tanita_healthplanet.api import (
+    WebsiteApiClient,
+    build_authorize_url,
+)
+from custom_components.tanita_healthplanet.const import WEBSITE_KINDS
+from custom_components.tanita_healthplanet.errors import HealthPlanetAuthError
+from custom_components.tanita_healthplanet.models import ProviderSnapshot
+
+SYNTHETIC_TIMESTAMP = "209901020304"
+
+
+class FakeCookieJar:
+    def __init__(self):
+        self.cleared = False
+
+    def clear(self):
+        self.cleared = True
+
+
+class FakeSession:
+    def __init__(self):
+        self.cookie_jar = FakeCookieJar()
+        self.closed = False
+
+    async def close(self):
+        self.closed = True
+
+
+def graph_body(value=70.0):
+    return json.dumps({"synthetic": True, "code": [0], "value1": [[value, SYNTHETIC_TIMESTAMP]]})
+
+
+def test_authorize_url_has_only_documented_oauth_parameters():
+    url = build_authorize_url("synthetic-client")
+    assert url.startswith("https://www.healthplanet.jp/oauth/auth?")
+    assert "client_id=synthetic-client" in url
+    assert "scope=innerscan" in url
+    assert "response_type=code" in url
+    assert "client_secret" not in url
+
+
+@pytest.mark.asyncio
+async def test_website_login_submits_csrf_only_in_memory(monkeypatch):
+    session = FakeSession()
+    client = WebsiteApiClient(
+        session,
+        login_id="synthetic-user",
+        password="synthetic-password-never-use",
+        request_interval=0,
+    )
+    calls = []
+    posted = {}
+
+    async def fake_request(method, url, **kwargs):
+        nonlocal posted
+        calls.append((method, url, kwargs))
+        if method == "GET":
+            return (
+                200,
+                "text/html",
+                """
+                <form method="post" action="/login.do">
+                  <input type="hidden"
+                         name="org.apache.struts.taglib.html.TOKEN"
+                         value="synthetic-csrf">
+                  <input type="text" name="loginId">
+                  <input type="password" name="passwd">
+                </form>
+                """,
+                "https://www.healthplanet.jp/login.do",
+            )
+        posted = dict(kwargs["data"])
+        return (
+            200,
+            "text/html",
+            "<html>logout</html>",
+            "https://www.healthplanet.jp/index.do",
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    await client.async_validate_credentials()
+    assert len(calls) == 2
+    assert posted["org.apache.struts.taglib.html.TOKEN"] == "synthetic-csrf"
+    await client.async_close()
+    assert session.cookie_jar.cleared is True
+    assert session.closed is True
+
+
+@pytest.mark.asyncio
+async def test_website_login_failure_exception_is_redacted(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(),
+        login_id="synthetic-user",
+        password="synthetic-password-never-use",
+        request_interval=0,
+    )
+    calls = 0
+
+    async def fake_request(method, url, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return (
+                200,
+                "text/html",
+                '<form method="post"><input name="loginId">'
+                '<input type="password" name="passwd"></form>',
+                "https://www.healthplanet.jp/login.do",
+            )
+        return (
+            200,
+            "text/html",
+            '<form><input type="password"></form>',
+            "https://www.healthplanet.jp/login.do",
+        )
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    with pytest.raises(HealthPlanetAuthError) as error:
+        await client.async_validate_credentials()
+    rendered = repr(error.value)
+    assert "synthetic-user" not in rendered
+    assert "synthetic-password-never-use" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_website_partial_kind_failure_does_not_hide_other_metrics(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    client._authenticated = True
+
+    async def fake_request(method, url, **kwargs):
+        kind = kwargs["params"]["kind"]
+        body = "malformed" if kind == 4 else graph_body(kind)
+        return 200, "application/json", body, "https://www.healthplanet.jp/graph/graph.json"
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    assert snapshot.measurements[1] is not None
+    assert snapshot.measurements[4] is None
+    assert snapshot.measurements[23] is not None
+    assert snapshot.errors == {4: "response_json_invalid"}
+
+
+@pytest.mark.asyncio
+async def test_backend_code_failure_is_isolated_to_one_kind(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    client._authenticated = True
+
+    async def fake_request(method, url, **kwargs):
+        kind = kwargs["params"]["kind"]
+        body = (
+            json.dumps({"synthetic": True, "code": [-1], "value1": []})
+            if kind == 5
+            else graph_body(kind)
+        )
+        return 200, "application/json", body, "https://www.healthplanet.jp/graph/graph.json"
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    assert snapshot.measurements[4] is not None
+    assert snapshot.measurements[5] is None
+    assert snapshot.measurements[6] is not None
+    assert snapshot.errors == {5: "website_backend_code_minus_one"}
+
+
+@pytest.mark.asyncio
+async def test_kind_23_null_does_not_fail_update(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    client._authenticated = True
+
+    async def fake_request(method, url, **kwargs):
+        kind = kwargs["params"]["kind"]
+        body = (
+            json.dumps({"synthetic": True, "code": [0], "value1": [None]})
+            if kind == 23
+            else graph_body(kind)
+        )
+        return 200, "application/json", body, "https://www.healthplanet.jp/graph/graph.json"
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    assert snapshot.measurements[23] is None
+    assert snapshot.measurements[22] is not None
+    assert snapshot.errors == {}
+
+
+@pytest.mark.asyncio
+async def test_session_expiry_allows_only_one_controlled_relogin(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    client._authenticated = True
+    logins = 0
+    fetches = 0
+
+    async def fake_login():
+        nonlocal logins
+        logins += 1
+        client._authenticated = True
+
+    async def fake_fetch_once():
+        nonlocal fetches
+        fetches += 1
+        if fetches == 1:
+            client._authenticated = False
+            raise HealthPlanetAuthError("website_session_expired")
+        return ProviderSnapshot(measurements={kind: None for kind in WEBSITE_KINDS})
+
+    monkeypatch.setattr(client, "_login", fake_login)
+    monkeypatch.setattr(client, "_fetch_once", fake_fetch_once)
+    await client.async_fetch()
+    assert logins == 1
+    assert fetches == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_updates_share_login_lock(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    logins = 0
+
+    async def fake_login():
+        nonlocal logins
+        logins += 1
+        await asyncio.sleep(0)
+        client._authenticated = True
+
+    async def fake_fetch_once():
+        await asyncio.sleep(0)
+        return ProviderSnapshot(measurements={kind: None for kind in WEBSITE_KINDS})
+
+    monkeypatch.setattr(client, "_login", fake_login)
+    monkeypatch.setattr(client, "_fetch_once", fake_fetch_once)
+    await asyncio.gather(client.async_fetch(), client.async_fetch())
+    assert logins == 1
+
+
+def test_no_production_runtime_imports_research_package():
+    root = __import__("pathlib").Path(__file__).resolve().parents[1]
+    for path in (root / "custom_components" / "tanita_healthplanet").glob("*.py"):
+        assert "research." not in path.read_text(encoding="utf-8")

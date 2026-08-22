@@ -8,13 +8,15 @@ It intentionally does not require or read `.env.local`.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any, cast
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE_RELATIVE_PATH = PurePosixPath("_local_only/healthplanet_schema_probe.json")
@@ -41,9 +43,7 @@ EMAIL_PATTERN = re.compile(
     r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}",
     re.IGNORECASE | re.ASCII,
 )
-HEADER_SECRET_PATTERN = re.compile(
-    rb"(?im)^\s*(?:cookie|authorization)\s*:\s*([^\r\n]{6,})"
-)
+HEADER_SECRET_PATTERN = re.compile(rb"(?im)^\s*(?:cookie|authorization)\s*:\s*([^\r\n]{6,})")
 STRUTS_TOKEN_VALUE_PATTERN = re.compile(
     rb"(?i)org\.apache\.struts\.taglib\.html\.TOKEN\s*[=:]\s*"
     rb"[\"']?([^\s\"',}\]]{6,})"
@@ -72,6 +72,16 @@ CONFIG_LIKE_SUFFIXES = {
     ".txt",
     ".yaml",
     ".yml",
+}
+SKIPPED_WORKING_DIRECTORIES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    "BACKUP",
+    "__pycache__",
+    "htmlcov",
 }
 
 
@@ -117,9 +127,7 @@ def _path_risks(path: PurePosixPath, *, allow_probe: bool) -> list[str]:
         return risks
     if name == ".env" or name.startswith(".env."):
         risks.append("environment_file")
-    if "_local_only" in folded_parts and not (
-        allow_probe and path == PROBE_RELATIVE_PATH
-    ):
+    if "_local_only" in folded_parts and not (allow_probe and path == PROBE_RELATIVE_PATH):
         risks.append("local_only_artifact")
     if any(
         part in {"browser_exports", "screenshots"}
@@ -154,6 +162,10 @@ def _safe_literal(value: bytes) -> bool:
     return any(marker in lowered for marker in SAFE_LITERAL_MARKERS)
 
 
+def _is_translation_metadata(path: PurePosixPath) -> bool:
+    return path.name == "strings.json" or "translations" in {part.casefold() for part in path.parts}
+
+
 def _content_findings(
     path: PurePosixPath,
     data: bytes,
@@ -167,9 +179,9 @@ def _content_findings(
     synthetic = _is_synthetic_path(path) or b'"synthetic": true' in data.lower()
 
     text = data.decode("utf-8", errors="ignore")
-    for match in EMAIL_PATTERN.finditer(text):
-        value = match.group(0)
-        context = text[max(0, match.start() - 64) : match.end() + 64].casefold()
+    for email_match in EMAIL_PATTERN.finditer(text):
+        value = email_match.group(0)
+        context = text[max(0, email_match.start() - 64) : email_match.end() + 64].casefold()
         if not any(marker.decode() in context for marker in SAFE_LITERAL_MARKERS):
             findings.append(
                 Finding(
@@ -180,21 +192,23 @@ def _content_findings(
                 )
             )
 
-    if path.suffix.casefold() in CONFIG_LIKE_SUFFIXES or path.name.startswith(".env"):
+    if (
+        path.suffix.casefold() in CONFIG_LIKE_SUFFIXES or path.name.startswith(".env")
+    ) and not _is_translation_metadata(path):
         for pattern, risk in (
             (SENSITIVE_ASSIGNMENT, "secret_assignment"),
             (HEADER_SECRET_PATTERN, "secret_header"),
             (STRUTS_TOKEN_VALUE_PATTERN, "csrf_token_value"),
         ):
-            for match in pattern.finditer(data):
-                value = match.group(1)
-                if not _safe_literal(value):
-                    findings.append(Finding(location, risk, object_id, _mask(value)))
+            for secret_match in pattern.finditer(data):
+                secret_value = secret_match.group(1)
+                if not _safe_literal(secret_value):
+                    findings.append(Finding(location, risk, object_id, _mask(secret_value)))
 
     if not synthetic:
-        for match in WINDOWS_USER_PATH.finditer(data):
+        for path_match in WINDOWS_USER_PATH.finditer(data):
             findings.append(
-                Finding(location, "windows_user_path", object_id, _mask(match.group(1)))
+                Finding(location, "windows_user_path", object_id, _mask(path_match.group(1)))
             )
         if (
             path != PROBE_RELATIVE_PATH
@@ -205,9 +219,14 @@ def _content_findings(
         if path.suffix.casefold() == ".html" and b"healthplanet" in data.lower():
             findings.append(Finding(location, "possible_raw_healthplanet_html", object_id))
         if _path_risks(path, allow_probe=True):
-            for match in MEASUREMENT_TIMESTAMP.finditer(data):
+            for timestamp_match in MEASUREMENT_TIMESTAMP.finditer(data):
                 findings.append(
-                    Finding(location, "measurement_timestamp", object_id, _mask(match.group(1)))
+                    Finding(
+                        location,
+                        "measurement_timestamp",
+                        object_id,
+                        _mask(timestamp_match.group(1)),
+                    )
                 )
     return findings
 
@@ -227,20 +246,22 @@ def _probe_key_audit(value: Any, *, path: tuple[str, ...] = ()) -> list[str]:
 
 
 def _working_tree_files() -> Iterable[tuple[PurePosixPath, Path]]:
-    for path in ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = PurePosixPath(path.relative_to(ROOT).as_posix())
-        if relative.parts and relative.parts[0] in {".git", "BACKUP"}:
-            continue
-        yield relative, path
+    for directory, child_directories, filenames in os.walk(ROOT):
+        child_directories[:] = [
+            name for name in child_directories if name not in SKIPPED_WORKING_DIRECTORIES
+        ]
+        base = Path(directory)
+        for filename in filenames:
+            path = base / filename
+            relative = PurePosixPath(path.relative_to(ROOT).as_posix())
+            yield relative, path
 
 
 def _git_blob_entries() -> Iterable[tuple[str, PurePosixPath]]:
     commits = str(_run_git("rev-list", "--all", text=True)).splitlines()
     seen: set[tuple[str, str]] = set()
     for commit in commits:
-        output = bytes(_run_git("ls-tree", "-r", "-z", "--full-tree", commit))
+        output = cast(bytes, _run_git("ls-tree", "-r", "-z", "--full-tree", commit))
         for entry in output.split(b"\x00"):
             if not entry or b"\t" not in entry:
                 continue
@@ -278,10 +299,8 @@ def _scan_git_objects() -> tuple[list[Finding], int]:
         location = f"git:{path.as_posix()}"
         for risk in _path_risks(path, allow_probe=False):
             findings.append(Finding(location, risk, object_id))
-        data = bytes(_run_git("cat-file", "blob", object_id))
-        findings.extend(
-            _content_findings(path, data, location=location, object_id=object_id)
-        )
+        data = cast(bytes, _run_git("cat-file", "blob", object_id))
+        findings.extend(_content_findings(path, data, location=location, object_id=object_id))
     return findings, count
 
 
@@ -296,7 +315,9 @@ def _scan_backups() -> tuple[list[Finding], int]:
                 bad_member = archive.testzip()
                 if bad_member:
                     findings.append(
-                        Finding(archive_path.name, "backup_integrity", masked=_mask(bad_member.encode()))
+                        Finding(
+                            archive_path.name, "backup_integrity", masked=_mask(bad_member.encode())
+                        )
                     )
                 for member in archive.infolist():
                     path = PurePosixPath(member.filename)
@@ -320,10 +341,7 @@ def _validate_probe() -> list[Finding]:
         probe = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return [Finding(PROBE_RELATIVE_PATH.as_posix(), "probe_invalid_json")]
-    return [
-        Finding(PROBE_RELATIVE_PATH.as_posix(), risk)
-        for risk in _probe_key_audit(probe)
-    ]
+    return [Finding(PROBE_RELATIVE_PATH.as_posix(), risk) for risk in _probe_key_audit(probe)]
 
 
 def run_audit() -> tuple[list[Finding], dict[str, int]]:
