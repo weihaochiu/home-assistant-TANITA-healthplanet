@@ -17,6 +17,8 @@ Website provider 提供體重、體脂率、體脂肪量、內臟脂肪等級、
 
 目前沒有 release 或 tag。分支測試可把本 repository 加入 HACS custom Integration repository，或將 `custom_components/tanita_healthplanet` 複製到 Home Assistant 的 `custom_components`。重新啟動後，到「設定 → 裝置與服務 → 新增整合」加入 TANITA HealthPlanet。
 
+正式提交 HACS 前，repository owner 仍須選定 license、設定 GitHub description 與有效 topics，並提供 brand assets（或登錄至 Home Assistant Brands）。CI 只排除這四項由 owner 決定的發布條件，其餘 integration/package 規則仍全部驗證。
+
 Official flow 需要在 HealthPlanet API 申請的資料。Experimental flow 必須確認 endpoint 非官方，也必須確認 Home Assistant `.storage` 並非專門的加密密碼庫。
 
 預設每 60 分鐘更新，Options 可設 30–1440 分鐘。認證失敗會啟動 reauthentication。移除 config entry 時會卸載 entities、清除記憶體 Cookie/session，並由 Home Assistant 移除該 entry 的保存資料；接著可從 HACS 移除程式碼。

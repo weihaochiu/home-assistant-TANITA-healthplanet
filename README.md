@@ -19,6 +19,8 @@ The website provider exposes weight, body-fat percentage, body-fat mass, viscera
 
 No release or tag has been created. For branch testing, add this repository to HACS as a custom Integration repository, or copy `custom_components/tanita_healthplanet` into Home Assistant's `custom_components` directory. Restart Home Assistant, then use **Settings → Devices & services → Add integration → TANITA HealthPlanet**.
 
+Before public HACS submission, the repository owner still needs to choose a license, add a GitHub description and valid topics, and provide brand assets (or register them with Home Assistant Brands). CI explicitly excludes only those owner-controlled publication checks; all integration/package checks remain enabled.
+
 The official flow requires credentials from HealthPlanet's API registration. The experimental flow requires two confirmations: the endpoint is unofficial, and Home Assistant's `.storage` is not a dedicated encrypted password vault.
 
 ## Operation and removal

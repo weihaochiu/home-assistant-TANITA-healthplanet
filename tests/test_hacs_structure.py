@@ -42,6 +42,9 @@ def test_manifest_and_hacs_metadata_are_pinned_for_v010():
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"
     assert hacs["homeassistant"] == "2026.8.0"
+    keys = list(manifest)
+    assert keys[:2] == ["domain", "name"]
+    assert keys[2:] == sorted(keys[2:])
 
 
 def test_translations_have_same_sensor_keys():
