@@ -203,10 +203,20 @@ def test_actual_observed_graph_shape_is_available_without_values():
     assert finding["metric_id"] == 1
     assert finding["metric_key"] == "weight"
     assert finding["metric_units"] == ["kg"]
-    assert finding["timestamp_formats"] == ["UNIX_MILLISECONDS"]
+    assert finding["timestamp_formats"] == ["YYYYMMDDHHMM", "YYYYMMDDHHMMSS"]
+    assert finding["value_item_shapes"] == {
+        "value1": [
+            "list[number,timestamp:YYYYMMDDHHMMSS]",
+            "list[number,timestamp:YYYYMMDDHHMM]",
+        ]
+    }
+    assert finding["date_field_shapes"] == {
+        "from_date": "list[string]",
+        "to_date": "list[string]",
+    }
     assert "70.0" not in serialized
     assert "71.0" not in serialized
-    assert "1700000000000" not in serialized
+    assert "202601020304" not in serialized
 
 
 def test_code_minus_one_is_recorded_without_interpretation():
