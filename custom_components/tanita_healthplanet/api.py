@@ -37,8 +37,8 @@ from .errors import (
     HealthPlanetRateLimitError,
     HealthPlanetSchemaError,
 )
-from .models import ProviderSnapshot
-from .parser import parse_official_payload, parse_website_payload
+from .models import ContentCategory, KindStatus, ProviderSnapshot
+from .parser import parse_official_payload, parse_website_payload_result
 
 _CHALLENGE_MARKERS = (
     "captcha",
@@ -110,6 +110,15 @@ def _fixed_json(text: str) -> Any:
         return json.loads(text)
     except json.JSONDecodeError:
         raise HealthPlanetSchemaError("response_json_invalid") from None
+
+
+def _safe_backend_code(payload: Any) -> int | None:
+    if not isinstance(payload, dict):
+        return None
+    code = payload.get("code")
+    if isinstance(code, list) and len(code) == 1:
+        code = code[0]
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
 
 
 class OfficialApiClient:
@@ -229,6 +238,7 @@ class WebsiteApiClient:
         self._last_request_at: float | None = None
         self._authenticated = False
         self._lock = asyncio.Lock()
+        self._last_kind_statuses: dict[int, KindStatus] = {}
 
     async def _throttle(self) -> None:
         if self._last_request_at is not None:
@@ -244,6 +254,7 @@ class WebsiteApiClient:
         *,
         data: dict[str, str] | None = None,
         params: dict[str, int] | None = None,
+        accept: str = "text/html,application/json",
     ) -> tuple[int, str, str, str]:
         parsed = urlsplit(url)
         if parsed.scheme != "https" or parsed.hostname != "www.healthplanet.jp":
@@ -256,7 +267,7 @@ class WebsiteApiClient:
                 data=data,
                 params=params,
                 allow_redirects=True,
-                headers={"User-Agent": USER_AGENT, "Accept": "text/html,application/json"},
+                headers={"User-Agent": USER_AGENT, "Accept": accept},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
             ) as response:
                 body = await response.text(errors="replace")
@@ -271,16 +282,25 @@ class WebsiteApiClient:
         if final.scheme != "https" or final.hostname != "www.healthplanet.jp":
             body = ""
             raise HealthPlanetConnectionError("website_cross_host_redirect_blocked")
-        if status in {401, 403}:
-            body = ""
-            raise HealthPlanetAuthError("website_authentication_failed")
         if status == 429:
             body = ""
             raise HealthPlanetRateLimitError("website_rate_limited")
-        if status >= 500:
-            body = ""
-            raise HealthPlanetConnectionError("website_service_unavailable")
         return status, content_type, body, final_url
+
+    @staticmethod
+    def _content_category(content_type: str, body: str) -> ContentCategory:
+        lowered_type = content_type.casefold()
+        prefix = body.lstrip()[:32].casefold()
+        if "html" in lowered_type or prefix.startswith(("<!doctype html", "<html", "<form")):
+            return "html"
+        if "json" in lowered_type:
+            return "json"
+        return "other"
+
+    @property
+    def diagnostic_statuses(self) -> dict[int, KindStatus]:
+        """Return only privacy-safe structural outcomes from the latest attempt."""
+        return dict(self._last_kind_statuses)
 
     @staticmethod
     def _detect_challenge(html: str) -> None:
@@ -333,31 +353,128 @@ class WebsiteApiClient:
     async def _fetch_once(self) -> ProviderSnapshot:
         measurements: dict[int, Any] = {}
         errors: dict[int, str] = {}
+        statuses: dict[int, KindStatus] = {}
+        self._last_kind_statuses = statuses
         for kind in WEBSITE_KINDS:
-            status, content_type, body, final_url = await self._request(
-                "GET",
-                WEBSITE_GRAPH_URL,
-                params={"day": 31, "page": 1, "kind": kind},
-            )
-            if "/login" in urlsplit(final_url).path.casefold() or "html" in content_type.casefold():
+            try:
+                status, content_type, body, final_url = await self._request(
+                    "GET",
+                    WEBSITE_GRAPH_URL,
+                    params={"day": 31, "page": 1, "kind": kind},
+                    accept="application/json",
+                )
+            except HealthPlanetConnectionError as error:
+                error_id = str(error)
+                errors[kind] = error_id
+                measurements[kind] = None
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="http_error",
+                    error_id=error_id,
+                )
+                continue
+            category = self._content_category(content_type, body)
+            if status in {401, 403}:
                 body = ""
                 self._authenticated = False
-                raise HealthPlanetAuthError("website_session_expired")
-            if status != 200 or "json" not in content_type.casefold():
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="auth_error",
+                    http_status=status,
+                    content_category=category,
+                    error_id="website_authentication_failed",
+                )
+                raise HealthPlanetAuthError("website_authentication_failed")
+            if "/login" in urlsplit(final_url).path.casefold() or category == "html":
                 body = ""
-                errors[kind] = "website_response_invalid"
+                self._authenticated = False
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="html",
+                    http_status=status,
+                    content_category="html",
+                    error_id="website_session_expired",
+                )
+                raise HealthPlanetAuthError("website_session_expired")
+            if status != 200:
+                body = ""
+                error_id = "website_http_status"
+                errors[kind] = error_id
                 measurements[kind] = None
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="http_error",
+                    http_status=status,
+                    content_category=category,
+                    error_id=error_id,
+                )
                 continue
+            if category != "json":
+                body = ""
+                error_id = "website_content_type_invalid"
+                errors[kind] = error_id
+                measurements[kind] = None
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="http_error",
+                    http_status=status,
+                    content_category=category,
+                    error_id=error_id,
+                )
+                continue
+            payload: Any = None
             try:
                 payload = _fixed_json(body)
-                values = parse_website_payload(payload, kind)
-            except (HealthPlanetBackendCodeError, HealthPlanetSchemaError) as error:
-                errors[kind] = str(error)
-                values = []
+                parsed = parse_website_payload_result(payload, kind)
+            except HealthPlanetBackendCodeError as error:
+                error_id = str(error)
+                errors[kind] = error_id
+                measurements[kind] = None
+                rows = payload.get("value1") if isinstance(payload, dict) else None
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="backend_error",
+                    http_status=status,
+                    content_category="json",
+                    backend_code=error.backend_code,
+                    error_id=error_id,
+                    row_count=len(rows) if isinstance(rows, list) else None,
+                )
+                continue
+            except HealthPlanetSchemaError as error:
+                error_id = str(error)
+                errors[kind] = error_id
+                measurements[kind] = None
+                rows = payload.get("value1") if isinstance(payload, dict) else None
+                statuses[kind] = KindStatus(
+                    kind=kind,
+                    outcome="parser_error",
+                    http_status=status,
+                    content_category="json",
+                    backend_code=_safe_backend_code(payload),
+                    error_id=error_id,
+                    row_count=len(rows) if isinstance(rows, list) else None,
+                    timestamp_parsing_success=False,
+                )
+                continue
             finally:
                 body = ""
-            measurements[kind] = values[-1] if values else None
-        return ProviderSnapshot(measurements=measurements, errors=errors)
+            measurement = parsed.measurements[-1] if parsed.measurements else None
+            measurements[kind] = measurement
+            statuses[kind] = KindStatus(
+                kind=kind,
+                outcome="available" if measurement is not None else "null",
+                http_status=status,
+                content_category="json",
+                backend_code=0,
+                row_count=parsed.row_count,
+                timestamp_parsing_success=parsed.timestamp_parsing_success,
+            )
+        return ProviderSnapshot(
+            measurements=measurements,
+            errors=errors,
+            kind_statuses=dict(statuses),
+        )
 
     async def async_fetch(self) -> ProviderSnapshot:
         async with self._lock:

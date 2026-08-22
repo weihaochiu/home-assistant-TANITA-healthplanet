@@ -14,6 +14,7 @@ from custom_components.tanita_healthplanet.parser import (
     parse_official_payload,
     parse_website_payload,
 )
+from research.healthplanet_web.parser import parse_graph_payload
 
 SYNTHETIC_TIMESTAMP_12 = "209901020304"
 SYNTHETIC_TIMESTAMP_14 = "20990102030405"
@@ -75,12 +76,35 @@ def test_unexpected_container_value_is_rejected_without_type_error():
     assert str(error.value) == "website_record_fields_invalid"
 
 
-def test_positional_schema_is_strict_and_does_not_guess_reversed_fields():
+def test_confirmed_two_field_schema_accepts_timestamp_value_order():
     payload = website_payload()
     payload["value1"] = [[SYNTHETIC_TIMESTAMP_12, 70.0]]
-    with pytest.raises(HealthPlanetSchemaError) as error:
-        parse_website_payload(payload, 1)
-    assert str(error.value) == "website_record_fields_invalid"
+    measurements = parse_website_payload(payload, 1)
+    assert [item.value for item in measurements] == [70.0]
+
+
+@pytest.mark.parametrize("timestamp", [1767290640, 1767290640000])
+def test_production_parser_accepts_research_timestamp_variants(timestamp):
+    payload = website_payload(timestamp=timestamp)
+    assert len(parse_website_payload(payload, 1)) == 1
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        [70.0, SYNTHETIC_TIMESTAMP_12],
+        [SYNTHETIC_TIMESTAMP_12, 70.0],
+        [70.0, 4071035040],
+    ],
+)
+def test_research_and_production_parsers_agree_on_confirmed_synthetic_schema(row):
+    payload = website_payload()
+    payload["value1"] = [row]
+    production = parse_website_payload(payload, 1)
+    research = parse_graph_payload(payload, 1).measurements
+    assert len(production) == len(research) == 1
+    assert production[0].value == research[0].value
+    assert production[0].measured_at == research[0].measured_at
 
 
 @pytest.mark.parametrize(

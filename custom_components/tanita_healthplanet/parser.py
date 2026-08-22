@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -73,6 +74,15 @@ def _numeric(value: Any) -> float | int | None:
 
 def parse_jst_timestamp(value: Any) -> datetime | None:
     """Parse a website or official timestamp as JST and return UTC."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        absolute = abs(value)
+        if 1_000_000_000_000 <= absolute < 100_000_000_000_000:
+            return datetime.fromtimestamp(value / 1000, tz=UTC)
+        if 1_000_000_000 <= absolute < 100_000_000_000:
+            return datetime.fromtimestamp(value, tz=UTC)
+        return None
     if not isinstance(value, str):
         return None
     candidate = value.strip()
@@ -102,6 +112,15 @@ def _single_code(payload: dict[str, Any]) -> Any:
     return code
 
 
+@dataclass(frozen=True)
+class WebsiteParseResult:
+    """Parsed measurements plus privacy-safe structural metadata."""
+
+    measurements: tuple[Measurement, ...]
+    row_count: int
+    timestamp_parsing_success: bool | None
+
+
 _WEB_KNOWN_KEYS = {
     "barMargin",
     "barWidth",
@@ -122,8 +141,12 @@ _WEB_KNOWN_KEYS = {
 }
 
 
-def parse_website_payload(payload: Any, kind: int) -> list[Measurement]:
-    """Parse the confirmed positional website schema without guessing fields."""
+def _missing(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and value.strip() in {"", "-"})
+
+
+def parse_website_payload_result(payload: Any, kind: int) -> WebsiteParseResult:
+    """Parse a two-field number/timestamp row by its confirmed field types."""
     description = METRICS.get(kind)
     if description is None:
         raise HealthPlanetSchemaError("unsupported_metric_kind")
@@ -131,9 +154,10 @@ def parse_website_payload(payload: Any, kind: int) -> list[Measurement]:
         raise HealthPlanetSchemaError("website_response_not_object")
     code = _single_code(payload)
     if code == -1:
-        raise HealthPlanetBackendCodeError("website_backend_code_minus_one")
+        raise HealthPlanetBackendCodeError("website_backend_code_minus_one", -1)
     if code != 0:
-        raise HealthPlanetBackendCodeError("website_backend_code_unsupported")
+        safe_code = code if isinstance(code, int) and not isinstance(code, bool) else None
+        raise HealthPlanetBackendCodeError("website_backend_code_unsupported", safe_code)
     rows = payload.get("value1")
     if not isinstance(rows, list):
         raise HealthPlanetSchemaError(
@@ -141,18 +165,26 @@ def parse_website_payload(payload: Any, kind: int) -> list[Measurement]:
             _safe_unknown_fields(payload, _WEB_KNOWN_KEYS),
         )
     measurements: list[Measurement] = []
+    timestamp_attempted = False
     for row in rows:
-        if row is None:
+        if _missing(row):
             continue
         if not isinstance(row, list) or len(row) != 2:
             raise HealthPlanetSchemaError("website_record_shape_changed")
-        # Authorized research confirmed value1 rows are [numeric value, JST string].
-        value = _numeric(row[0])
-        measured_at = parse_jst_timestamp(row[1])
-        raw_value = row[0]
-        if value is None and (
-            raw_value is None or (isinstance(raw_value, str) and raw_value.strip() in {"", "-"})
-        ):
+        if all(_missing(item) for item in row):
+            continue
+        timestamps = [
+            (index, parsed)
+            for index, item in enumerate(row)
+            if (parsed := parse_jst_timestamp(item)) is not None
+        ]
+        timestamp_attempted = True
+        if len(timestamps) != 1:
+            raise HealthPlanetSchemaError("website_record_timestamp_ambiguous")
+        timestamp_index, measured_at = timestamps[0]
+        raw_value = row[1 - timestamp_index]
+        value = _numeric(raw_value)
+        if _missing(raw_value):
             continue
         if value is None or measured_at is None:
             raise HealthPlanetSchemaError("website_record_fields_invalid")
@@ -168,7 +200,17 @@ def parse_website_payload(payload: Any, kind: int) -> list[Measurement]:
                 raw_kind=kind,
             )
         )
-    return sorted(measurements, key=lambda item: item.measured_at)
+    measurements.sort(key=lambda item: item.measured_at)
+    return WebsiteParseResult(
+        measurements=tuple(measurements),
+        row_count=len(rows),
+        timestamp_parsing_success=True if timestamp_attempted else None,
+    )
+
+
+def parse_website_payload(payload: Any, kind: int) -> list[Measurement]:
+    """Return production measurements while retaining the public parser API."""
+    return list(parse_website_payload_result(payload, kind).measurements)
 
 
 _OFFICIAL_TAG_KIND = {OFFICIAL_TAG_WEIGHT: 1, OFFICIAL_TAG_BODY_FAT: 2}

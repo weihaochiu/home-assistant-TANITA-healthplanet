@@ -24,7 +24,9 @@ class HealthPlanetSchemaError(HealthPlanetError):
 
 
 class HealthPlanetBackendCodeError(HealthPlanetError):
-    pass
+    def __init__(self, message: str, backend_code: int | None = None) -> None:
+        super().__init__(message)
+        self.backend_code = backend_code
 
 
 class HealthPlanetManualInteractionRequired(HealthPlanetError):

@@ -18,6 +18,7 @@ from custom_components.tanita_healthplanet.const import (
     DOMAIN,
     PROVIDER_OFFICIAL,
     PROVIDER_WEBSITE,
+    WEBSITE_PRIMARY_KINDS,
 )
 from custom_components.tanita_healthplanet.coordinator import HealthPlanetCoordinator
 from custom_components.tanita_healthplanet.errors import (
@@ -26,7 +27,7 @@ from custom_components.tanita_healthplanet.errors import (
     HealthPlanetManualInteractionRequired,
     HealthPlanetRateLimitError,
 )
-from custom_components.tanita_healthplanet.models import Measurement, ProviderSnapshot
+from custom_components.tanita_healthplanet.models import KindStatus, Measurement, ProviderSnapshot
 from custom_components.tanita_healthplanet.sensor import async_setup_entry
 
 
@@ -47,6 +48,122 @@ async def test_coordinator_keeps_partial_snapshot_and_entry_interval(hass):
     coordinator = HealthPlanetCoordinator(hass, _entry(PROVIDER_OFFICIAL, "first"), provider)
     assert coordinator.update_interval.total_seconds() == 3600
     assert await coordinator._async_update_data() is snapshot
+
+
+async def test_all_primary_parser_errors_fail_coordinator_update(hass):
+    statuses = {
+        kind: KindStatus(
+            kind=kind,
+            outcome="parser_error",
+            http_status=200,
+            content_category="json",
+            error_id="synthetic_schema_mismatch",
+            row_count=1,
+            timestamp_parsing_success=False,
+        )
+        for kind in WEBSITE_PRIMARY_KINDS
+    }
+    statuses[23] = KindStatus(
+        kind=23,
+        outcome="null",
+        http_status=200,
+        content_category="json",
+        backend_code=0,
+        row_count=1,
+    )
+    snapshot = ProviderSnapshot(
+        measurements={kind: None for kind in (*WEBSITE_PRIMARY_KINDS, 23)},
+        errors={kind: "synthetic_schema_mismatch" for kind in WEBSITE_PRIMARY_KINDS},
+        kind_statuses=statuses,
+    )
+    provider = SimpleNamespace(
+        provider_type=PROVIDER_WEBSITE,
+        async_fetch=AsyncMock(return_value=snapshot),
+    )
+    coordinator = HealthPlanetCoordinator(hass, _entry(PROVIDER_WEBSITE, "all-failed"), provider)
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is False
+    assert coordinator.kind_statuses[23].outcome == "null"
+
+
+async def test_partial_kind_error_keeps_successful_kinds_and_update_success(hass):
+    statuses = {
+        1: KindStatus(
+            kind=1,
+            outcome="available",
+            http_status=200,
+            content_category="json",
+            backend_code=0,
+            row_count=1,
+            timestamp_parsing_success=True,
+        ),
+        2: KindStatus(
+            kind=2,
+            outcome="parser_error",
+            http_status=200,
+            content_category="json",
+            error_id="synthetic_schema_mismatch",
+            row_count=1,
+            timestamp_parsing_success=False,
+        ),
+    }
+    measurement = Measurement(
+        metric_key="weight",
+        value=70.0,
+        unit="kg",
+        measured_at=__import__("datetime").datetime(2099, 1, 1, tzinfo=__import__("datetime").UTC),
+        source="synthetic",
+        model=None,
+        experimental=True,
+        raw_kind=1,
+    )
+    snapshot = ProviderSnapshot(
+        measurements={1: measurement, 2: None},
+        errors={2: "synthetic_schema_mismatch"},
+        kind_statuses=statuses,
+    )
+    provider = SimpleNamespace(
+        provider_type=PROVIDER_WEBSITE,
+        async_fetch=AsyncMock(return_value=snapshot),
+    )
+    coordinator = HealthPlanetCoordinator(hass, _entry(PROVIDER_WEBSITE, "partial"), provider)
+    await coordinator.async_refresh()
+    assert coordinator.last_update_success is True
+    assert coordinator.data is snapshot
+    assert coordinator.data.measurements[1] is measurement
+
+
+async def test_repeated_identical_kind_warning_is_throttled_and_redacted(hass, caplog):
+    sensitive_markers = (
+        "synthetic-password-never-use",
+        "synthetic-cookie-never-use",
+        "synthetic-csrf-never-use",
+        "98765.4321",
+    )
+    status = KindStatus(
+        kind=2,
+        outcome="parser_error",
+        http_status=200,
+        content_category="json",
+        error_id="synthetic_schema_mismatch",
+        row_count=1,
+        timestamp_parsing_success=False,
+    )
+    snapshot = ProviderSnapshot(
+        measurements={1: None, 2: None},
+        errors={2: "synthetic_schema_mismatch"},
+        kind_statuses={2: status},
+    )
+    provider = SimpleNamespace(
+        provider_type=PROVIDER_WEBSITE,
+        async_fetch=AsyncMock(return_value=snapshot),
+    )
+    coordinator = HealthPlanetCoordinator(hass, _entry(PROVIDER_WEBSITE, "warnings"), provider)
+    await coordinator._async_update_data()
+    await coordinator._async_update_data()
+    messages = [record.getMessage() for record in caplog.records if "kind=2" in record.getMessage()]
+    assert len(messages) == 1
+    assert all(marker not in caplog.text for marker in sensitive_markers)
 
 
 async def test_setup_failure_closes_provider_state(hass, monkeypatch):

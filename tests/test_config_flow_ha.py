@@ -29,7 +29,7 @@ from custom_components.tanita_healthplanet.diagnostics import (
     async_get_config_entry_diagnostics,
 )
 from custom_components.tanita_healthplanet.errors import HealthPlanetAuthError
-from custom_components.tanita_healthplanet.models import ProviderSnapshot
+from custom_components.tanita_healthplanet.models import KindStatus, ProviderSnapshot
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")
@@ -138,7 +138,29 @@ async def test_unload_closes_only_the_target_entry_session():
 
 async def test_diagnostics_exclude_credentials_values_and_timestamps():
     snapshot = ProviderSnapshot(measurements={1: None, 23: None}, errors={23: "schema"})
-    coordinator = SimpleNamespace(data=snapshot, last_update_success=True)
+    coordinator = SimpleNamespace(
+        data=snapshot,
+        last_update_success=True,
+        kind_statuses={
+            1: KindStatus(
+                kind=1,
+                outcome="parser_error",
+                http_status=200,
+                content_category="json",
+                error_id="synthetic_schema_mismatch",
+                row_count=7,
+                timestamp_parsing_success=False,
+            ),
+            23: KindStatus(
+                kind=23,
+                outcome="null",
+                http_status=200,
+                content_category="json",
+                backend_code=0,
+                row_count=1,
+            ),
+        },
+    )
     entry = SimpleNamespace(
         data={
             CONF_PROVIDER: PROVIDER_WEBSITE,
@@ -159,4 +181,17 @@ async def test_diagnostics_exclude_credentials_values_and_timestamps():
         "available_kinds",
         "unavailable_kinds",
         "error_kinds",
+        "per_kind",
     }
+    assert diagnostics["per_kind"][0] == {
+        "kind": 1,
+        "outcome": "parser_error",
+        "http_status": 200,
+        "content_category": "json",
+        "backend_code": None,
+        "error_id": "synthetic_schema_mismatch",
+        "row_count": 7,
+        "timestamp_parsing_success": False,
+    }
+    assert "measurement" not in rendered
+    assert "timestamp" not in rendered.casefold().replace("timestamp_parsing_success", "")

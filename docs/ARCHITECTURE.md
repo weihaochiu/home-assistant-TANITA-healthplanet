@@ -6,4 +6,4 @@ The official provider exchanges an authorization code for an access token and re
 
 `DataUpdateCoordinator` polls every 60 minutes by default. A website update reuses one authenticated session, serializes concurrent calls, spaces requests, and permits one controlled login after an expired session. One kind may be null or fail schema validation without hiding successful kinds. Authentication failures become Home Assistant reauthentication; transient/rate failures become `UpdateFailed` and naturally wait for the next conservative coordinator cycle.
 
-Production runtime never imports `research/`. Parsers use confirmed positional or documented named fields, interpret website timestamps as JST, and convert them to timezone-aware UTC values.
+Production runtime never imports `research/`. The website parser identifies the one numeric value and one timestamp in each confirmed two-field row without assuming their order; documented official fields remain name-based. Website timestamps are interpreted as JST and converted to timezone-aware UTC values.
