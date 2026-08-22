@@ -1,0 +1,9 @@
+{
+  "code": [0],
+  "formatString": ["synthetic-format"],
+  "from_date": ["synthetic-from"],
+  "to_date": ["synthetic-to"],
+  "value1": [[1700000000000, 70.0], [1700000060000, 71.0]],
+  "value1_name": ["synthetic metric"],
+  "value1_unit": ["kg"]
+}
