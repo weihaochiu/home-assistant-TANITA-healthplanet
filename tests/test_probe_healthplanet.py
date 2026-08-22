@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import zipfile
+from http.cookiejar import Cookie
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,47 @@ def test_cross_domain_redirect_is_rejected():
         handler.redirect_request(
             request, None, 302, "Found", {}, "https://example.invalid/login"
         )
+
+
+def test_login_requires_logout_evidence_even_after_http_200():
+    login_html = (FIXTURES / "login_relative.html").read_text(encoding="utf-8")
+
+    class Session:
+        def __init__(self):
+            self.calls = 0
+
+        def request(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return 200, "text/html", login_html.encode(), probe.LOGIN_URL
+            return 200, "text/html", b"<html>Welcome</html>", "https://www.healthplanet.jp/home"
+
+    with pytest.raises(probe.ManualInteractionRequired):
+        probe.login(Session(), SYNTHETIC_LOGIN_ID, SYNTHETIC_PASSWORD)
+
+
+def test_login_success_requires_non_login_path_and_logout_marker():
+    login_html = (FIXTURES / "login_relative.html").read_text(encoding="utf-8")
+
+    class Session:
+        def __init__(self):
+            self.calls = 0
+
+        def request(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return 200, "text/html", login_html.encode(), probe.LOGIN_URL
+            return (
+                200,
+                "text/html",
+                "<html>ログアウト</html>".encode(),
+                "https://www.healthplanet.jp/home",
+            )
+
+    assert probe.login(Session(), SYNTHETIC_LOGIN_ID, SYNTHETIC_PASSWORD) == (
+        "success",
+        "/home",
+    )
 
 
 @pytest.mark.parametrize("kind", probe.KINDS)
@@ -418,6 +460,35 @@ def test_request_count_hard_upper_bound_without_network():
     with pytest.raises(probe.RequestLimitError):
         session.request(probe.GRAPH_URL)
     assert opener.calls == probe.REQUEST_LIMIT
+
+
+def test_session_close_clears_in_memory_cookie_jar():
+    session = probe.ProbeSession()
+    session.cookie_jar.set_cookie(
+        Cookie(
+            version=0,
+            name="synthetic-session",
+            value="synthetic-cookie-value",
+            port=None,
+            port_specified=False,
+            domain="www.healthplanet.jp",
+            domain_specified=True,
+            domain_initial_dot=False,
+            path="/",
+            path_specified=True,
+            secure=True,
+            expires=None,
+            discard=True,
+            comment=None,
+            comment_url=None,
+            rest={},
+            rfc2109=False,
+        )
+    )
+    assert len(session.cookie_jar) == 1
+    session.close()
+    assert len(session.cookie_jar) == 0
+    assert session.opener is None
 
 
 def test_local_only_is_gitignored_and_backup_excluded():
