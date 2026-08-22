@@ -591,11 +591,53 @@ def _code_metadata(payload: Any) -> tuple[bool, str | None, Any]:
     return True, code_type, safe_value
 
 
-def _collect_schema(payload: Any) -> tuple[list[str], list[str], int, list[str], list[str]]:
+def _value_shape(value: Any, *, depth: int = 0) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    if isinstance(value, str):
+        detected = timestamp_format(value)
+        return f"timestamp:{detected}" if detected else "string"
+    if isinstance(value, list):
+        if depth >= 2:
+            return "list"
+        shapes = sorted({_value_shape(item, depth=depth + 1) for item in value})
+        return f"list[{','.join(shapes)}]" if shapes else "list[empty]"
+    if isinstance(value, dict):
+        return "object"
+    return "unknown"
+
+
+def _safe_format_template(value: Any) -> str | None:
+    if not isinstance(value, str) or not 1 <= len(value) <= 64:
+        return None
+    if not re.fullmatch(r"[A-Za-z%0-9/:., _+\-]+", value):
+        return None
+    return value
+
+
+def _collect_schema(
+    payload: Any,
+) -> tuple[
+    list[str],
+    list[str],
+    int,
+    list[str],
+    list[str],
+    dict[str, list[str]],
+    dict[str, str],
+    dict[str, list[str]],
+]:
     nested_keys: set[str] = set()
     timestamp_formats: set[str] = set()
     units: set[str] = set()
     value_keys: set[str] = set()
+    value_item_shapes: dict[str, set[str]] = {}
+    date_field_shapes: dict[str, str] = {}
+    format_templates: dict[str, set[str]] = {}
     record_count = 0
 
     def visit(value: Any, *, parent_key: str = "", depth: int = 0) -> None:
@@ -612,14 +654,29 @@ def _collect_schema(payload: Any) -> tuple[list[str], list[str], int, list[str],
                     for candidate in candidates:
                         if isinstance(candidate, str) and candidate.strip() in SAFE_UNITS:
                             units.add(candidate.strip())
+                if isinstance(key, str) and "formatstring" in key.casefold():
+                    candidates = child if isinstance(child, list) else [child]
+                    safe_templates = {
+                        template
+                        for template in (_safe_format_template(item) for item in candidates)
+                        if template is not None
+                    }
+                    if safe_templates:
+                        format_templates[key] = safe_templates
+                if isinstance(key, str) and TIMESTAMP_KEY_PATTERN.search(key):
+                    date_field_shapes[key] = _value_shape(child)
                 visit(child, parent_key=key if isinstance(key, str) else "", depth=depth + 1)
         elif isinstance(value, list):
             if VALUE_KEY_PATTERN.fullmatch(parent_key):
                 value_keys.add(parent_key)
                 record_count += len(value)
+                value_item_shapes.setdefault(parent_key, set()).update(
+                    _value_shape(item) for item in value
+                )
                 for row in value:
-                    if isinstance(row, (list, tuple)) and row:
-                        detected = timestamp_format(row[0])
+                    candidates = row if isinstance(row, (list, tuple)) else [row]
+                    for candidate in candidates:
+                        detected = timestamp_format(candidate)
                         if detected:
                             timestamp_formats.add(detected)
                 return
@@ -639,6 +696,9 @@ def _collect_schema(payload: Any) -> tuple[list[str], list[str], int, list[str],
         record_count,
         sorted(units),
         sorted(value_keys),
+        {key: sorted(value) for key, value in sorted(value_item_shapes.items())},
+        dict(sorted(date_field_shapes.items())),
+        {key: sorted(value) for key, value in sorted(format_templates.items())},
     )
 
 
@@ -665,6 +725,9 @@ def analyze_response(
         "data_container_present": False,
         "record_count": 0,
         "timestamp_formats": [],
+        "value_item_shapes": {},
+        "date_field_shapes": {},
+        "format_templates": {},
         "metric_id": metric_id,
         "metric_key": KIND_NAMES.get(metric_id) if metric_id is not None else None,
         "metric_units": [],
@@ -700,11 +763,23 @@ def analyze_response(
     result["code_present"] = present
     result["code_type"] = code_type
     result["code_value"] = code_value
-    nested, timestamps, count, units, value_keys = _collect_schema(payload)
+    (
+        nested,
+        timestamps,
+        count,
+        units,
+        value_keys,
+        value_item_shapes,
+        date_field_shapes,
+        format_templates,
+    ) = _collect_schema(payload)
     result["nested_keys"] = nested
     result["timestamp_formats"] = timestamps
     result["record_count"] = count
     result["metric_units"] = units
+    result["value_item_shapes"] = value_item_shapes
+    result["date_field_shapes"] = date_field_shapes
+    result["format_templates"] = format_templates
     result["data_container_present"] = bool(value_keys) or count > 0
     media_type = _media_type(response.content_type)
     if "json" not in media_type:
