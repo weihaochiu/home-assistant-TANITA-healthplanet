@@ -1,0 +1,12 @@
+{
+  "codeowners": ["@weihaochiu"],
+  "config_flow": true,
+  "documentation": "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet",
+  "domain": "tanita_healthplanet",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet/issues",
+  "name": "TANITA HealthPlanet",
+  "requirements": [],
+  "version": "0.1.0"
+}

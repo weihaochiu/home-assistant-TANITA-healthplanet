@@ -1,0 +1,82 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This HealthPlanet account/provider is already configured.",
+      "reauth_successful": "Reauthentication was successful."
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to HealthPlanet.",
+      "experimental_confirmation_required": "You must explicitly accept the experimental website-provider warning.",
+      "invalid_auth": "Authentication failed. Check the supplied credentials or authorization code.",
+      "manual_interaction_required": "HealthPlanet requires manual interaction. The integration will not bypass it.",
+      "storage_confirmation_required": "You must acknowledge the Home Assistant .storage credential risk."
+    },
+    "step": {
+      "official": {
+        "data": {
+          "account_label": "Account label",
+          "client_id": "OAuth client ID",
+          "client_secret": "OAuth client secret"
+        },
+        "description": "Production default. The client secret and token are stored in Home Assistant .storage.",
+        "title": "Official HealthPlanet API"
+      },
+      "official_authorize": {
+        "data": {"authorization_code": "Authorization code"},
+        "description": "Open {authorize_url}, approve innerscan, and copy the one-time code here.",
+        "title": "Authorize HealthPlanet"
+      },
+      "reauth_official": {
+        "data": {"authorization_code": "New authorization code"},
+        "description": "Open {authorize_url}. The client secret is not shown.",
+        "title": "Reauthenticate official API"
+      },
+      "reauth_website": {
+        "data": {
+          "login_id": "HealthPlanet login ID",
+          "password": "HealthPlanet password"
+        },
+        "description": "The password is intentionally not prefilled.",
+        "title": "Reauthenticate experimental website provider"
+      },
+      "user": {
+        "data": {"provider": "Provider"},
+        "title": "Choose a HealthPlanet provider"
+      },
+      "website": {
+        "data": {
+          "experimental_confirmed": "I accept the unofficial endpoint risk",
+          "login_id": "HealthPlanet login ID",
+          "password": "HealthPlanet password",
+          "storage_warning_confirmed": "I accept that .storage is not a dedicated encrypted password vault"
+        },
+        "description": "Disabled-by-default experimental provider. The endpoint is unofficial and may change or be blocked. Cookies, CSRF tokens, HTML, and raw JSON remain in memory only.",
+        "title": "Experimental website provider"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "basal_metabolic_rate": {"name": "Basal metabolic rate"},
+      "body_fat_mass": {"name": "Body fat mass"},
+      "body_fat_percentage": {"name": "Body fat percentage"},
+      "body_water_percentage": {"name": "Body water percentage"},
+      "estimated_bone_mass": {"name": "Estimated bone mass"},
+      "metabolic_age": {"name": "Metabolic age"},
+      "muscle_mass": {"name": "Muscle mass"},
+      "muscle_quality_score": {"name": "Muscle quality score (experimental)"},
+      "visceral_fat_level": {"name": "Visceral fat level"},
+      "weight": {"name": "Weight"}
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {"update_interval": "Update interval (minutes)"},
+        "description": "Minimum 30 minutes.",
+        "title": "HealthPlanet options"
+      }
+    }
+  },
+  "title": "TANITA HealthPlanet"
+}

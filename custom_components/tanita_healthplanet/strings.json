@@ -1,0 +1,93 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "This HealthPlanet account/provider is already configured.",
+      "reauth_successful": "Reauthentication was successful."
+    },
+    "error": {
+      "cannot_connect": "Unable to connect to HealthPlanet.",
+      "experimental_confirmation_required": "You must explicitly accept the experimental website-provider warning.",
+      "invalid_auth": "Authentication failed. Check the supplied credentials or authorization code.",
+      "manual_interaction_required": "HealthPlanet requires a browser challenge, CAPTCHA, MFA, or other manual interaction. The integration will not bypass it.",
+      "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault."
+    },
+    "step": {
+      "official": {
+        "data": {
+          "account_label": "Account label",
+          "client_id": "OAuth client ID",
+          "client_secret": "OAuth client secret"
+        },
+        "description": "Production default. Register an application with HealthPlanet. The client secret and resulting access token are stored in Home Assistant .storage.",
+        "title": "Official HealthPlanet API"
+      },
+      "official_authorize": {
+        "data": {
+          "authorization_code": "Authorization code"
+        },
+        "description": "Open {authorize_url}, approve the innerscan scope, then copy the returned one-time code here. Do not post the code in logs or issues.",
+        "title": "Authorize HealthPlanet"
+      },
+      "reauth_official": {
+        "data": {
+          "authorization_code": "New authorization code"
+        },
+        "description": "Open {authorize_url} and enter a new one-time authorization code. The client secret is not shown in this form.",
+        "title": "Reauthenticate official API"
+      },
+      "reauth_website": {
+        "data": {
+          "login_id": "HealthPlanet login ID",
+          "password": "HealthPlanet password"
+        },
+        "description": "Re-enter website credentials. The password is intentionally not prefilled.",
+        "title": "Reauthenticate experimental website provider"
+      },
+      "user": {
+        "data": {
+          "provider": "Provider"
+        },
+        "data_description": {
+          "provider": "Official is the production default. Website is an unsupported experimental option."
+        },
+        "title": "Choose a HealthPlanet provider"
+      },
+      "website": {
+        "data": {
+          "experimental_confirmed": "I understand this endpoint is unofficial and may change or be blocked",
+          "login_id": "HealthPlanet login ID",
+          "password": "HealthPlanet password",
+          "storage_warning_confirmed": "I understand the password is stored in Home Assistant .storage, which is not a dedicated encrypted password vault"
+        },
+        "description": "Disabled-by-default experimental provider. It logs into the HealthPlanet website and uses an unofficial internal endpoint. TANITA does not guarantee this endpoint, and it may change or stop working without notice. Cookies, CSRF tokens, HTML, and raw JSON are kept only in memory.",
+        "title": "Experimental website provider"
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "basal_metabolic_rate": {"name": "Basal metabolic rate"},
+      "body_fat_mass": {"name": "Body fat mass"},
+      "body_fat_percentage": {"name": "Body fat percentage"},
+      "body_water_percentage": {"name": "Body water percentage"},
+      "estimated_bone_mass": {"name": "Estimated bone mass"},
+      "metabolic_age": {"name": "Metabolic age"},
+      "muscle_mass": {"name": "Muscle mass"},
+      "muscle_quality_score": {"name": "Muscle quality score (experimental)"},
+      "visceral_fat_level": {"name": "Visceral fat level"},
+      "weight": {"name": "Weight"}
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_interval": "Update interval (minutes)"
+        },
+        "description": "A conservative interval reduces load on HealthPlanet. Minimum: 30 minutes.",
+        "title": "HealthPlanet options"
+      }
+    }
+  },
+  "title": "TANITA HealthPlanet"
+}
