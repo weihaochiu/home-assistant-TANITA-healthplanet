@@ -21,10 +21,15 @@ EXCLUDED_DIR_NAMES = {
     "BACKUP",
     "__pycache__",
     "_local_only",
+    "browser_exports",
     "cookies",
+    "healthplanet_research",
     "logs",
+    "probe_output",
+    "screenshots",
     "session",
     "sessions",
+    "temporary_probe",
     "token",
     "tokens",
 }
@@ -32,10 +37,14 @@ EXCLUDED_FILE_NAMES = {".env", "cookies.json", "secrets.yaml", "session.json"}
 EXCLUDED_SUFFIXES = {
     ".cookie",
     ".cookies",
+    ".db",
+    ".dump",
     ".har",
     ".log",
     ".session",
+    ".sqlite",
     ".token",
+    ".trace",
 }
 EXCLUDED_SENSITIVE_STEMS = {
     "cookie",
@@ -55,6 +64,11 @@ def is_excluded(relative_path: Path) -> bool:
     parts = relative_path.parts
     if any(part in EXCLUDED_DIR_NAMES for part in parts[:-1]):
         return True
+    if any(
+        part.casefold().startswith(("temporary_probe", "probe_output"))
+        for part in parts[:-1]
+    ):
+        return True
     name = relative_path.name
     folded = name.casefold()
     if name in EXCLUDED_FILE_NAMES or name.startswith(".env."):
@@ -62,6 +76,10 @@ def is_excluded(relative_path: Path) -> bool:
     if relative_path.stem.casefold() in EXCLUDED_SENSITIVE_STEMS:
         return True
     if folded.startswith("raw_response"):
+        return True
+    if folded.startswith(("request_capture", "response_capture", "screenshot_")):
+        return True
+    if "_screenshot." in folded:
         return True
     return folded.endswith(tuple(EXCLUDED_SUFFIXES))
 

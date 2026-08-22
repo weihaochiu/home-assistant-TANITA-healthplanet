@@ -77,7 +77,7 @@ def test_parse_login_form_fields_hidden_csrf_and_relative_action():
         "https://example.invalid/login",
         "http://www.healthplanet.jp/login.do",
         "https://www.healthplanet.jp.example.invalid/login",
-        "https://user@www.healthplanet.jp/login",
+        "https://synthetic-user@www.healthplanet.jp/login",
     ],
 )
 def test_login_form_rejects_cross_host_and_unsafe_urls(action):
