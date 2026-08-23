@@ -5,11 +5,13 @@ import json
 
 import pytest
 
-from custom_components.tanita_healthplanet.api import (
-    WebsiteApiClient,
-    build_authorize_url,
+from custom_components.tanita_healthplanet.api import WebsiteApiClient
+from custom_components.tanita_healthplanet.const import (
+    OFFICIAL_SCOPE,
+    WEBSITE_GRAPH_URL,
+    WEBSITE_HYBRID_KINDS,
+    WEBSITE_KINDS,
 )
-from custom_components.tanita_healthplanet.const import WEBSITE_GRAPH_URL, WEBSITE_KINDS
 from custom_components.tanita_healthplanet.errors import HealthPlanetAuthError
 from custom_components.tanita_healthplanet.models import ProviderSnapshot
 
@@ -37,13 +39,40 @@ def graph_body(value=70.0):
     return json.dumps({"synthetic": True, "code": [0], "value1": [[value, SYNTHETIC_TIMESTAMP]]})
 
 
-def test_authorize_url_has_only_documented_oauth_parameters():
-    url = build_authorize_url("synthetic-client")
-    assert url.startswith("https://www.healthplanet.jp/oauth/auth?")
-    assert "client_id=synthetic-client" in url
-    assert "scope=innerscan" in url
-    assert "response_type=code" in url
-    assert "client_secret" not in url
+def test_official_scope_contains_both_documented_sources():
+    assert OFFICIAL_SCOPE == "innerscan,sphygmomanometer"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_website_client_requests_only_eight_supplemental_kinds(
+    monkeypatch,
+):
+    client = WebsiteApiClient(
+        FakeSession(),
+        login_id="synthetic-user",
+        password="synthetic-password-never-use",
+        request_interval=0,
+        kinds=WEBSITE_HYBRID_KINDS,
+    )
+    client._authenticated = True
+    requested = []
+
+    async def fake_request(method, url, **kwargs):
+        kind = kwargs["params"]["kind"]
+        requested.append(kind)
+        body = (
+            json.dumps({"synthetic": True, "code": [0], "value1": [None]})
+            if kind == 23
+            else graph_body(kind)
+        )
+        return 200, "application/json", body, WEBSITE_GRAPH_URL
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    assert tuple(requested) == WEBSITE_HYBRID_KINDS
+    assert 1 not in requested
+    assert 2 not in requested
+    assert snapshot.measurements[23] is None
 
 
 @pytest.mark.asyncio

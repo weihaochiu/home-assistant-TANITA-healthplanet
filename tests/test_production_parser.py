@@ -184,4 +184,4 @@ def test_schema_error_contains_keys_only_never_values():
 
 def test_confirmed_website_kind_count_is_ten():
     assert len(WEBSITE_KINDS) == 10
-    assert set(WEBSITE_KINDS) == set(METRICS)
+    assert set(WEBSITE_KINDS).issubset(METRICS)

@@ -13,9 +13,13 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tanita_healthplanet import async_setup_entry as async_setup_integration
-from custom_components.tanita_healthplanet.api import OfficialApiClient
+from custom_components.tanita_healthplanet.api import WebsiteApiClient
 from custom_components.tanita_healthplanet.const import (
+    CONF_LOGIN_ID,
+    CONF_MODE,
+    CONF_PASSWORD,
     DOMAIN,
+    MODE_WEBSITE_ONLY,
     PROVIDER_OFFICIAL,
     PROVIDER_WEBSITE,
     WEBSITE_PRIMARY_KINDS,
@@ -167,12 +171,21 @@ async def test_repeated_identical_kind_warning_is_throttled_and_redacted(hass, c
 
 
 async def test_setup_failure_closes_provider_state(hass, monkeypatch):
-    entry = _entry(PROVIDER_OFFICIAL, "setup-failure")
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Synthetic setup failure",
+        data={
+            CONF_MODE: MODE_WEBSITE_ONLY,
+            CONF_LOGIN_ID: "synthetic-user",
+            CONF_PASSWORD: "synthetic-password-never-use",
+        },
+        entry_id="setup-failure",
+    )
     entry.mock_state(hass, config_entries.ConfigEntryState.SETUP_IN_PROGRESS)
     failed_fetch = AsyncMock(side_effect=HealthPlanetAuthError("redacted"))
     closed = AsyncMock()
-    monkeypatch.setattr(OfficialApiClient, "async_fetch", failed_fetch)
-    monkeypatch.setattr(OfficialApiClient, "async_close", closed)
+    monkeypatch.setattr(WebsiteApiClient, "async_fetch", failed_fetch)
+    monkeypatch.setattr(WebsiteApiClient, "async_close", closed)
     with pytest.raises(ConfigEntryAuthFailed):
         await async_setup_integration(hass, entry)
     closed.assert_awaited_once()
@@ -202,10 +215,13 @@ async def test_sensor_platform_official_ids_and_unavailable_state(hass):
     entry.runtime_data = SimpleNamespace(coordinator=coordinator)
     entities = []
     await async_setup_entry(hass, entry, entities.extend)
-    assert len(entities) == 2
+    assert len(entities) == 5
     assert {entity.unique_id for entity in entities} == {
         "official-entry_1",
         "official-entry_2",
+        "official-entry_101",
+        "official-entry_102",
+        "official-entry_103",
     }
     assert all(entity.available is False for entity in entities)
     assert all(entity.native_value is None for entity in entities)

@@ -13,6 +13,7 @@ def test_required_hacs_integration_files_exist():
         "manifest.json",
         "const.py",
         "config_flow.py",
+        "application_credentials.py",
         "coordinator.py",
         "sensor.py",
         "diagnostics.py",
@@ -54,7 +55,7 @@ def test_translations_have_same_sensor_keys():
         (INTEGRATION / "translations" / "zh-Hant.json").read_text(encoding="utf-8")
     )
     expected = set(strings["entity"]["sensor"])
-    assert len(expected) == 10
+    assert len(expected) == 13
     assert set(english["entity"]["sensor"]) == expected
     assert set(traditional_chinese["entity"]["sensor"]) == expected
 
@@ -71,7 +72,8 @@ def test_website_warning_mentions_unofficial_endpoint_and_storage_risk():
 def test_options_flow_schema_contains_no_sensitive_fields():
     source = (INTEGRATION / "config_flow.py").read_text(encoding="utf-8")
     options_source = source.split("class HealthPlanetOptionsFlow", 1)[1]
-    assert "CONF_UPDATE_INTERVAL" in options_source
+    assert "CONF_OFFICIAL_UPDATE_INTERVAL" in options_source
+    assert "CONF_WEBSITE_UPDATE_INTERVAL" in options_source
     assert "CONF_PASSWORD" not in options_source
     assert "CONF_CLIENT_SECRET" not in options_source
 

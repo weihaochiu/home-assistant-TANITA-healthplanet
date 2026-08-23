@@ -45,18 +45,11 @@ def test_path_audit_covers_required_sensitive_artifacts():
         "screenshot_login.png": "screenshot",
     }
     for name, expected in names.items():
-        assert expected in secret_audit._path_risks(
-            PurePosixPath(name), allow_probe=False
-        )
+        assert expected in secret_audit._path_risks(PurePosixPath(name), allow_probe=False)
 
 
 def test_allowlisted_probe_is_not_a_path_risk():
-    assert (
-        secret_audit._path_risks(
-            secret_audit.PROBE_RELATIVE_PATH, allow_probe=True
-        )
-        == []
-    )
+    assert secret_audit._path_risks(secret_audit.PROBE_RELATIVE_PATH, allow_probe=True) == []
 
 
 def test_mask_never_returns_full_sensitive_value():
@@ -122,10 +115,7 @@ def test_cookie_and_csrf_values_are_reported_only_masked():
     csrf_value = b"plausible" + b"-csrf-value"
     findings = secret_audit._content_findings(
         PurePosixPath("capture.har"),
-        b"Cookie: "
-        + cookie_value
-        + b"\norg.apache.struts.taglib.html.TOKEN="
-        + csrf_value,
+        b"Cookie: " + cookie_value + b"\norg.apache.struts.taglib.html.TOKEN=" + csrf_value,
         location="capture.har",
     )
     assert {item.risk for item in findings} >= {"secret_header", "csrf_token_value"}
@@ -140,9 +130,12 @@ def test_all_tracked_fixtures_are_synthetic_and_secret_free():
         if not path.is_file():
             continue
         relative = PurePosixPath("tests/fixtures") / path.name
-        assert secret_audit._content_findings(
-            relative, path.read_bytes(), location=relative.as_posix()
-        ) == []
+        assert (
+            secret_audit._content_findings(
+                relative, path.read_bytes(), location=relative.as_posix()
+            )
+            == []
+        )
 
 
 def test_run_audit_has_no_credential_file_dependency(monkeypatch):
