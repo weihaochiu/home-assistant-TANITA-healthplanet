@@ -1,5 +1,13 @@
 # Security and privacy
 
+## Home Assistant runtime
+
+Official access uses Home Assistant Application Credentials and its standard external OAuth flow. The integration requests only `innerscan,sphygmomanometer`. Website access is optional, experimental, and uses a dedicated in-memory cookie jar. Official and Website sessions, coordinators, authentication failures, and reauthentication paths remain separate.
+
+No source logs or diagnoses credentials, token bodies, cookies, CSRF data, raw payloads, health values, or measurement timestamps. Structural warnings use fixed outcomes and identifiers and are throttled until recovery. Unload closes sessions and clears the Website cookie jar.
+
+Home Assistant's `.storage` is not a dedicated encrypted password vault. Protect the host, configuration directory, backups, Application Credentials, and Home Assistant account. If exposure is suspected, revoke the OAuth grant and change the website password before reporting the problem.
+
 ## Credential handling
 
 Local research credentials are read only from `.env.local` inside the Python

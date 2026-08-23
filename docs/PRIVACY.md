@@ -1,9 +1,13 @@
 # Privacy
 
-Health measurements and credentials stay inside the Home Assistant runtime and config-entry store. The integration exposes only the latest metric state; it does not create raw-response files. Its diagnostics contain provider type, update interval, success state, available/error kind numbers, and privacy-safe per-kind structural outcomes. These outcomes may include HTTP status, content category, backend code, fixed parser error ID, row count, and whether timestamp parsing succeeded. They never include response bodies, measurement values or timestamps, account identifiers, credentials, cookies, CSRF fields, authorization headers, tokens, request bodies, or secret-bearing URLs.
+Health measurements and credentials stay inside the Home Assistant runtime and config-entry store. The integration does not create raw HTML, JSON, HAR, cookie, token, or measurement files.
 
-The official provider stores OAuth client data and its access token. The website provider stores the login ID and password because restart/session-expiry recovery otherwise cannot work. `.storage` is not a dedicated encrypted password vault. Protect Home Assistant configuration backups and limit host access. Cookies and CSRF fields exist only in memory and are cleared when the entry unloads.
+Official diagnostics are split into `innerscan` and `sphygmomanometer` structural status. Website diagnostics contain a `per_kind` list. Allowed fields are source/mode, configured interval, success state, kind or endpoint, outcome, HTTP status, response category, backend code, fixed parser error identifier, row/record count, tag availability, timestamp-parsing success, and whether a complete blood-pressure pair was found.
 
-To remove stored data, delete every TANITA HealthPlanet config entry in Home Assistant. Then remove the custom integration through HACS or delete its component directory and restart. Revoke the OAuth grant or change the website password if you no longer trust a host or backup.
+Diagnostics and logs never include account identifiers, passwords, client secrets, authorization codes, access/refresh tokens, Cookie or Set-Cookie headers, CSRF fields, Authorization headers, request/response bodies, secret-bearing URLs, measurement values, measurement timestamps, or tracebacks containing payloads. Repeated identical source/kind warnings are suppressed until the outcome recovers.
 
-Never attach unredacted diagnostics, credentials, raw requests/responses, or real health data to an issue. Use synthetic values and timestamps only.
+Home Assistant Application Credentials stores OAuth client data, and the config entry stores the OAuth token. Enabling Website stores its login ID and password because restart and session-expiry recovery otherwise cannot work. `.storage` is not a dedicated encrypted password vault. Protect the Home Assistant configuration directory and backups, restrict host access, and avoid third-party backup destinations you do not trust. Website cookies and CSRF fields exist only in memory and are cleared on unload.
+
+To remove integration data, delete all TANITA HealthPlanet config entries, uninstall the custom integration, and restart Home Assistant. Revoke the HealthPlanet OAuth grant and change the website password if a host or backup may have been exposed.
+
+Never attach unredacted diagnostics, credentials, raw requests/responses, screenshots containing account data, or real health data to a GitHub issue. Reproduce problems with synthetic values and timestamps only.
