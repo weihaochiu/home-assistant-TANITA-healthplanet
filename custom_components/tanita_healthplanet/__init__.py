@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -15,70 +16,214 @@ else:
     HealthPlanetConfigEntry = Any
 
 PLATFORMS = ["sensor"]
+CONFIG_ENTRY_VERSION = 2
+CONFIG_ENTRY_MINOR_VERSION = 0
+
+
+def _runtime_providers(runtime: Any) -> tuple[Any, ...]:
+    """Return providers from either a v2 or legacy test runtime."""
+    providers = getattr(runtime, "providers", None)
+    if providers is not None:
+        return tuple(providers)
+    provider = getattr(runtime, "provider", None)
+    return (provider,) if provider is not None else ()
+
+
+def _entry_mode(data: dict[str, Any]) -> str:
+    from .const import (
+        CONF_MODE,
+        CONF_PROVIDER,
+        MODE_OFFICIAL_ONLY,
+        MODE_WEBSITE_ONLY,
+        PROVIDER_OFFICIAL,
+    )
+
+    mode = data.get(CONF_MODE)
+    if isinstance(mode, str):
+        return mode
+    return MODE_OFFICIAL_ONLY if data.get(CONF_PROVIDER) == PROVIDER_OFFICIAL else MODE_WEBSITE_ONLY
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry) -> bool:
+    """Migrate provider entries to explicit source modes without touching secrets."""
+    from .const import (
+        CONF_MODE,
+        CONF_PROVIDER,
+        MODE_OFFICIAL_ONLY,
+        MODE_WEBSITE_ONLY,
+        PROVIDER_OFFICIAL,
+    )
+
+    if entry.version > CONFIG_ENTRY_VERSION:
+        return False
+    if entry.version == CONFIG_ENTRY_VERSION:
+        return True
+    if entry.version != 1:
+        return False
+
+    data = dict(entry.data)
+    provider = data.get(CONF_PROVIDER)
+    data[CONF_MODE] = MODE_OFFICIAL_ONLY if provider == PROVIDER_OFFICIAL else MODE_WEBSITE_ONLY
+    data.pop(CONF_PROVIDER, None)
+    hass.config_entries.async_update_entry(
+        entry,
+        data=data,
+        version=CONFIG_ENTRY_VERSION,
+        minor_version=CONFIG_ENTRY_MINOR_VERSION,
+    )
+    return True
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry) -> bool:
-    """Set up one independently authenticated HealthPlanet config entry."""
+    """Set up independently authenticated source coordinators."""
     import aiohttp
-    from homeassistant.exceptions import ConfigEntryNotReady
+    from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
     from homeassistant.helpers import aiohttp_client
+    from homeassistant.helpers.config_entry_oauth2_flow import (
+        OAuth2Session,
+        async_get_config_entry_implementation,
+    )
 
     from .api import OfficialApiClient, WebsiteApiClient
     from .const import (
-        CONF_ACCESS_TOKEN,
         CONF_LOGIN_ID,
         CONF_PASSWORD,
-        CONF_PROVIDER,
-        PROVIDER_OFFICIAL,
-        PROVIDER_WEBSITE,
+        CONF_REAUTH_SOURCE,
+        MODE_HYBRID,
+        MODE_OFFICIAL_ONLY,
+        MODE_WEBSITE_ONLY,
+        SOURCE_OFFICIAL,
+        SOURCE_WEBSITE,
+        WEBSITE_HYBRID_KINDS,
+        WEBSITE_KINDS,
     )
-    from .coordinator import HealthPlanetCoordinator
-    from .models import HealthPlanetProvider, RuntimeData
+    from .coordinator import OfficialCoordinator, WebsiteCoordinator
+    from .models import RuntimeData
 
-    provider: HealthPlanetProvider
-    provider_type = entry.data[CONF_PROVIDER]
-    if provider_type == PROVIDER_OFFICIAL:
-        session = aiohttp_client.async_get_clientsession(hass)
-        provider = OfficialApiClient(session, entry.data[CONF_ACCESS_TOKEN])
-    elif provider_type == PROVIDER_WEBSITE:
-        session = aiohttp_client.async_create_clientsession(
-            hass,
-            auto_cleanup=False,
-            cookie_jar=aiohttp.CookieJar(),
-        )
-        provider = WebsiteApiClient(
-            session,
-            login_id=entry.data[CONF_LOGIN_ID],
-            password=entry.data[CONF_PASSWORD],
-        )
-    else:
-        raise ConfigEntryNotReady("unsupported_healthplanet_provider")
+    mode = _entry_mode(dict(entry.data))
+    runtime = RuntimeData()
+    auth_failures: set[str] = set()
+    initializing = True
+    reauth_scheduled = False
 
-    coordinator = HealthPlanetCoordinator(hass, entry, provider)
-    entry.runtime_data = RuntimeData(coordinator=coordinator, provider=provider)
+    def _start_reauth() -> None:
+        nonlocal reauth_scheduled
+        reauth_scheduled = False
+        if not auth_failures:
+            return
+        source = "both" if len(auth_failures) > 1 else next(iter(auth_failures))
+        auth_failures.clear()
+        entry.async_start_reauth_if_available(hass, data={CONF_REAUTH_SOURCE: source})
+
+    def _auth_failed(source: str) -> None:
+        nonlocal reauth_scheduled
+        auth_failures.add(source)
+        if initializing or reauth_scheduled:
+            return
+        reauth_scheduled = True
+        hass.loop.call_soon(_start_reauth)
+
     try:
-        await coordinator.async_config_entry_first_refresh()
+        if mode in {MODE_HYBRID, MODE_OFFICIAL_ONLY}:
+            if "token" not in entry.data or "auth_implementation" not in entry.data:
+                auth_failures.add(SOURCE_OFFICIAL)
+            else:
+                implementation = await async_get_config_entry_implementation(hass, entry)
+                oauth_session = OAuth2Session(hass, entry, implementation)
+                official_provider = OfficialApiClient(
+                    aiohttp_client.async_get_clientsession(hass),
+                    oauth_session=oauth_session,
+                )
+                runtime.official_provider = official_provider
+                runtime.official_coordinator = OfficialCoordinator(
+                    hass,
+                    entry,
+                    official_provider,
+                    auth_failure_callback=_auth_failed,
+                )
+
+        if mode in {MODE_HYBRID, MODE_WEBSITE_ONLY}:
+            if CONF_LOGIN_ID not in entry.data or CONF_PASSWORD not in entry.data:
+                auth_failures.add(SOURCE_WEBSITE)
+            else:
+                website_session = aiohttp_client.async_create_clientsession(
+                    hass,
+                    auto_cleanup=False,
+                    cookie_jar=aiohttp.CookieJar(),
+                )
+                website_kinds = WEBSITE_HYBRID_KINDS if mode == MODE_HYBRID else WEBSITE_KINDS
+                website_provider = WebsiteApiClient(
+                    website_session,
+                    login_id=entry.data[CONF_LOGIN_ID],
+                    password=entry.data[CONF_PASSWORD],
+                    kinds=website_kinds,
+                )
+                runtime.website_provider = website_provider
+                runtime.website_coordinator = WebsiteCoordinator(
+                    hass,
+                    entry,
+                    website_provider,
+                    primary_kinds=tuple(kind for kind in website_kinds if kind != 23),
+                    auth_failure_callback=_auth_failed,
+                )
+
+        entry.runtime_data = runtime
+        if runtime.coordinators:
+            await asyncio.gather(
+                *(coordinator.async_refresh() for coordinator in runtime.coordinators)
+            )
+        initializing = False
+
+        successful = [
+            coordinator for coordinator in runtime.coordinators if coordinator.last_update_success
+        ]
+        failed_auth_sources = {
+            coordinator.source for coordinator in runtime.coordinators if coordinator.auth_failed
+        } | auth_failures
+        configured_sources = {
+            SOURCE_OFFICIAL if mode in {MODE_HYBRID, MODE_OFFICIAL_ONLY} else "",
+            SOURCE_WEBSITE if mode in {MODE_HYBRID, MODE_WEBSITE_ONLY} else "",
+        } - {""}
+        if not successful:
+            if failed_auth_sources == configured_sources:
+                # Raising is the HA-standard setup path; ConfigEntry starts
+                # reauth once and the flow infers the configured source(s).
+                raise ConfigEntryAuthFailed("healthplanet_reauthorization_required")
+            raise ConfigEntryNotReady("healthplanet_all_configured_sources_unavailable")
+        if auth_failures:
+            _start_reauth()
+
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
-        await provider.async_close()
+        await asyncio.gather(
+            *(provider.async_close() for provider in _runtime_providers(runtime)),
+            return_exceptions=True,
+        )
         raise
+
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry) -> bool:
-    """Unload an entry and erase its in-memory session state."""
+    """Unload an entry and erase all in-memory source sessions."""
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unloaded:
-        await entry.runtime_data.provider.async_close()
+        await asyncio.gather(
+            *(provider.async_close() for provider in _runtime_providers(entry.runtime_data)),
+            return_exceptions=True,
+        )
     return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry) -> None:
-    """Clear any surviving in-memory session when an entry is removed."""
+    """Clear any surviving in-memory sessions when an entry is removed."""
     runtime = getattr(entry, "runtime_data", None)
     if runtime is not None:
-        await runtime.provider.async_close()
+        await asyncio.gather(
+            *(provider.async_close() for provider in _runtime_providers(runtime)),
+            return_exceptions=True,
+        )
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
-    from .coordinator import HealthPlanetCoordinator
+    from .coordinator import OfficialCoordinator, WebsiteCoordinator
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,9 @@ KindOutcome = Literal[
     "parser_error",
 ]
 ContentCategory = Literal["json", "html", "other"]
+EndpointOutcome = Literal[
+    "available", "null", "auth_error", "http_error", "parser_error", "rate_limited"
+]
 
 
 @dataclass(frozen=True)
@@ -49,10 +52,24 @@ class KindStatus:
 
 
 @dataclass(frozen=True)
+class EndpointStatus:
+    """Privacy-safe structural result for one official endpoint."""
+
+    outcome: EndpointOutcome
+    http_status: int | None = None
+    record_count: int = 0
+    available_tags: tuple[str, ...] = ()
+    unavailable_tags: tuple[str, ...] = ()
+    error_id: str | None = None
+    complete_pair_found: bool | None = None
+
+
+@dataclass(frozen=True)
 class ProviderSnapshot:
     measurements: dict[int, Measurement | None]
     errors: dict[int, str] = field(default_factory=dict)
     kind_statuses: dict[int, KindStatus] = field(default_factory=dict)
+    endpoint_statuses: dict[str, EndpointStatus] = field(default_factory=dict)
 
 
 class HealthPlanetProvider(Protocol):
@@ -65,5 +82,39 @@ class HealthPlanetProvider(Protocol):
 
 @dataclass
 class RuntimeData:
-    coordinator: HealthPlanetCoordinator
-    provider: HealthPlanetProvider
+    official_coordinator: OfficialCoordinator | None = None
+    website_coordinator: WebsiteCoordinator | None = None
+    official_provider: HealthPlanetProvider | None = None
+    website_provider: HealthPlanetProvider | None = None
+
+    @property
+    def coordinator(self) -> OfficialCoordinator | WebsiteCoordinator:
+        """Compatibility accessor for single-source entries."""
+        coordinator = self.official_coordinator or self.website_coordinator
+        if coordinator is None:
+            raise RuntimeError("healthplanet_runtime_has_no_coordinator")
+        return coordinator
+
+    @property
+    def provider(self) -> HealthPlanetProvider:
+        """Compatibility accessor for single-source entries."""
+        provider = self.official_provider or self.website_provider
+        if provider is None:
+            raise RuntimeError("healthplanet_runtime_has_no_provider")
+        return provider
+
+    @property
+    def coordinators(self) -> tuple[OfficialCoordinator | WebsiteCoordinator, ...]:
+        return tuple(
+            coordinator
+            for coordinator in (self.official_coordinator, self.website_coordinator)
+            if coordinator is not None
+        )
+
+    @property
+    def providers(self) -> tuple[HealthPlanetProvider, ...]:
+        return tuple(
+            provider
+            for provider in (self.official_provider, self.website_provider)
+            if provider is not None
+        )

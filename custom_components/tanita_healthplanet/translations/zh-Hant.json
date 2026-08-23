@@ -1,82 +1,85 @@
 {
+  "title": "TANITA HealthPlanet",
   "config": {
     "abort": {
-      "already_configured": "此 HealthPlanet 帳號／provider 已設定。",
-      "reauth_successful": "重新驗證成功。"
+      "already_configured": "此 HealthPlanet 網站帳號已設定。",
+      "reauth_successful": "重新驗證成功。",
+      "reconfigure_no_changes": "未進行變更。",
+      "reconfigure_not_supported": "此 entry 已使用支援官方 API 的模式。"
     },
     "error": {
       "cannot_connect": "無法連線 HealthPlanet。",
-      "experimental_confirmation_required": "必須明確接受 experimental website provider 警告。",
-      "invalid_auth": "驗證失敗，請檢查憑證或授權碼。",
-      "manual_interaction_required": "HealthPlanet 要求手動互動；integration 不會繞過安全機制。",
-      "storage_confirmation_required": "必須確認 Home Assistant .storage 的憑證保存風險。"
+      "experimental_confirmation_required": "必須明確接受非官方 Website endpoint 風險。",
+      "invalid_auth": "驗證失敗，請檢查輸入的憑證。",
+      "manual_interaction_required": "HealthPlanet 要求瀏覽器互動；本整合不會繞過安全機制。",
+      "storage_confirmation_required": "必須確認 Home Assistant .storage 不是專用加密密碼庫。"
     },
     "step": {
-      "official": {
+      "user": {
+        "title": "選擇 HealthPlanet 模式",
+        "description": "建議使用 Hybrid。官方 API 提供體重、體脂率、血壓及脈搏；Experimental Website 僅補足官方未提供的體組成資料。",
+        "data": {"mode": "模式"},
+        "data_description": {
+          "mode": "hybrid（建議）、official_only，或 website_only（experimental）"
+        }
+      },
+      "website_opt_in": {
+        "title": "Experimental Website 資料",
+        "description": "只有需要八個額外體組成 sensors 時才啟用非官方 Website 來源；下一步必須明確接受兩項警告。",
+        "data": {"enable_website": "啟用 Experimental Website 資料"}
+      },
+      "website": {
+        "title": "Experimental Website 來源",
+        "description": "此內部 endpoint 並非官方 API，可能隨時失效。密碼保存在 Home Assistant .storage；該處不是專用加密密碼庫。Cookie 與 CSRF 狀態只存在記憶體。",
         "data": {
-          "account_label": "帳號標籤",
-          "client_id": "OAuth client ID",
-          "client_secret": "OAuth client secret"
-        },
-        "description": "Production 預設。client secret 與 token 會保存在 Home Assistant .storage。",
-        "title": "HealthPlanet 官方 API"
-      },
-      "official_authorize": {
-        "data": {"authorization_code": "授權碼"},
-        "description": "開啟 {authorize_url}、允許 innerscan，再貼上一次性授權碼。",
-        "title": "授權 HealthPlanet"
-      },
-      "reauth_official": {
-        "data": {"authorization_code": "新的授權碼"},
-        "description": "開啟 {authorize_url}。表單不會顯示 client secret。",
-        "title": "重新驗證官方 API"
+          "login_id": "HealthPlanet 登入 ID",
+          "password": "HealthPlanet 密碼",
+          "experimental_confirmed": "我接受非官方 endpoint 的風險",
+          "storage_warning_confirmed": "我接受 .storage 的憑證保存風險"
+        }
       },
       "reauth_website": {
+        "title": "重新驗證 Website 來源",
+        "description": "只替換 Website 憑證；既有密碼永不預填。",
         "data": {
           "login_id": "HealthPlanet 登入 ID",
           "password": "HealthPlanet 密碼"
-        },
-        "description": "密碼欄位刻意不預填。",
-        "title": "重新驗證 experimental website provider"
+        }
       },
-      "user": {
-        "data": {"provider": "Provider"},
-        "title": "選擇 HealthPlanet provider"
-      },
-      "website": {
-        "data": {
-          "experimental_confirmed": "我接受非官方 endpoint 的變動與封鎖風險",
-          "login_id": "HealthPlanet 登入 ID",
-          "password": "HealthPlanet 密碼",
-          "storage_warning_confirmed": "我了解 .storage 不是專用加密密碼庫"
-        },
-        "description": "預設停用的 experimental provider。endpoint 並非官方 API，可能變更或被封鎖。Cookie、CSRF、HTML 與 raw JSON 僅保留於記憶體。",
-        "title": "Experimental website provider"
+      "reconfigure": {
+        "title": "升級為 Hybrid",
+        "description": "使用 Home Assistant 標準 OAuth 流程，並保留既有 Website 憑證。",
+        "data": {"upgrade_to_hybrid": "將此 Website-only entry 升級為 Hybrid"}
       }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "basal_metabolic_rate": {"name": "基礎代謝"},
-      "body_fat_mass": {"name": "體脂肪量"},
-      "body_fat_percentage": {"name": "體脂率"},
-      "body_water_percentage": {"name": "體水分率"},
-      "estimated_bone_mass": {"name": "推定骨量"},
-      "metabolic_age": {"name": "體內年齡"},
-      "muscle_mass": {"name": "肌肉量"},
-      "muscle_quality_score": {"name": "全身筋質點數（experimental）"},
-      "visceral_fat_level": {"name": "內臟脂肪等級"},
-      "weight": {"name": "體重"}
     }
   },
   "options": {
     "step": {
       "init": {
-        "data": {"update_interval": "更新間隔（分鐘）"},
-        "description": "最短 30 分鐘。",
-        "title": "HealthPlanet 選項"
+        "title": "HealthPlanet 更新頻率",
+        "description": "最短 30 分鐘。Website endpoint 並非官方，不建議頻繁更新。",
+        "data": {
+          "official_update_interval": "官方 API 更新間隔（分鐘）",
+          "website_update_interval": "Website 更新間隔（分鐘）"
+        }
       }
     }
   },
-  "title": "TANITA HealthPlanet"
+  "entity": {
+    "sensor": {
+      "weight": {"name": "體重"},
+      "body_fat_percentage": {"name": "體脂率"},
+      "systolic_blood_pressure": {"name": "收縮壓"},
+      "diastolic_blood_pressure": {"name": "舒張壓"},
+      "pulse": {"name": "脈搏"},
+      "body_fat_mass": {"name": "體脂肪量"},
+      "visceral_fat_level": {"name": "內臟脂肪等級"},
+      "basal_metabolic_rate": {"name": "基礎代謝"},
+      "muscle_mass": {"name": "肌肉量"},
+      "estimated_bone_mass": {"name": "推定骨量"},
+      "metabolic_age": {"name": "體內年齡"},
+      "body_water_percentage": {"name": "體水分率"},
+      "muscle_quality_score": {"name": "全身筋質點數（experimental）"}
+    }
+  }
 }

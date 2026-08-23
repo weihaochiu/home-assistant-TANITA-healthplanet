@@ -8,18 +8,20 @@ import re
 from html.parser import HTMLParser
 from time import monotonic
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit
 
 import aiohttp
 
 from .const import (
-    OFFICIAL_AUTH_URL,
-    OFFICIAL_DATA_URL,
-    OFFICIAL_REDIRECT_URI,
-    OFFICIAL_SCOPE,
+    OFFICIAL_INNERSCAN_KINDS,
+    OFFICIAL_INNERSCAN_URL,
+    OFFICIAL_SPHYGMO_KINDS,
+    OFFICIAL_SPHYGMO_URL,
     OFFICIAL_TAG_BODY_FAT,
+    OFFICIAL_TAG_DIASTOLIC,
+    OFFICIAL_TAG_PULSE,
+    OFFICIAL_TAG_SYSTOLIC,
     OFFICIAL_TAG_WEIGHT,
-    OFFICIAL_TOKEN_URL,
     PROVIDER_OFFICIAL,
     PROVIDER_WEBSITE,
     REQUEST_TIMEOUT_SECONDS,
@@ -37,8 +39,13 @@ from .errors import (
     HealthPlanetRateLimitError,
     HealthPlanetSchemaError,
 )
-from .models import ContentCategory, KindStatus, ProviderSnapshot
-from .parser import parse_official_payload, parse_website_payload_result
+from .models import ContentCategory, EndpointStatus, KindStatus, ProviderSnapshot
+from .parser import (
+    OfficialParseResult,
+    parse_official_innerscan_payload,
+    parse_official_sphygmomanometer_payload,
+    parse_website_payload_result,
+)
 
 _CHALLENGE_MARKERS = (
     "captcha",
@@ -95,16 +102,6 @@ class _LoginFormParser(HTMLParser):
             self._in_candidate = False
 
 
-def build_authorize_url(client_id: str) -> str:
-    parameters = {
-        "client_id": client_id,
-        "redirect_uri": OFFICIAL_REDIRECT_URI,
-        "scope": OFFICIAL_SCOPE,
-        "response_type": "code",
-    }
-    return f"{OFFICIAL_AUTH_URL}?{urlencode(parameters)}"
-
-
 def _fixed_json(text: str) -> Any:
     try:
         return json.loads(text)
@@ -122,73 +119,53 @@ def _safe_backend_code(payload: Any) -> int | None:
 
 
 class OfficialApiClient:
-    """Client for the documented OAuth API (weight and body-fat percentage)."""
+    """Client for the two documented official measurement endpoints."""
 
     provider_type = PROVIDER_OFFICIAL
 
-    def __init__(self, session: aiohttp.ClientSession, access_token: str) -> None:
-        self._session = session
-        self._access_token = access_token
-
-    @staticmethod
-    async def async_exchange_code(
+    def __init__(
+        self,
         session: aiohttp.ClientSession,
+        access_token: str | None = None,
         *,
-        client_id: str,
-        client_secret: str,
-        code: str,
-    ) -> str:
-        form = {
-            "client_id": client_id,
-            "client_secret": client_secret,
-            "redirect_uri": OFFICIAL_REDIRECT_URI,
-            "code": code,
-            "grant_type": "authorization_code",
-        }
-        try:
-            async with session.post(
-                OFFICIAL_TOKEN_URL,
-                data=form,
-                headers={"User-Agent": USER_AGENT},
-                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
-            ) as response:
-                body = await response.text()
-                if response.status in {400, 401, 403}:
-                    raise HealthPlanetAuthError("official_oauth_exchange_failed")
-                if response.status == 429:
-                    raise HealthPlanetRateLimitError("official_oauth_rate_limited")
-                if response.status >= 500:
-                    raise HealthPlanetConnectionError("official_oauth_service_unavailable")
-        except TimeoutError:
-            raise HealthPlanetConnectionError("official_oauth_timeout") from None
-        except aiohttp.ClientError:
-            raise HealthPlanetConnectionError("official_oauth_connection_failed") from None
-        finally:
-            form = {}
-        token: Any = None
-        try:
-            parsed = json.loads(body)
-        except json.JSONDecodeError:
-            parsed_query = parse_qs(body, keep_blank_values=True)
-            if parsed_query.get("access_token"):
-                token = parsed_query["access_token"][0]
-        else:
-            if isinstance(parsed, dict):
-                token = parsed.get("access_token")
-        body = ""
-        if not isinstance(token, str) or not token:
-            raise HealthPlanetAuthError("official_oauth_token_missing")
-        return token
+        oauth_session: Any | None = None,
+    ) -> None:
+        self._session = session
+        self._access_token = access_token or ""
+        self._oauth_session = oauth_session
+        self._last_endpoint_statuses: dict[str, EndpointStatus] = {}
 
-    async def async_fetch(self) -> ProviderSnapshot:
+    @property
+    def diagnostic_statuses(self) -> dict[str, EndpointStatus]:
+        """Return only privacy-safe endpoint metadata."""
+        return dict(self._last_endpoint_statuses)
+
+    async def _async_current_access_token(self) -> str:
+        if self._oauth_session is not None:
+            await self._oauth_session.async_ensure_token_valid()
+            token = self._oauth_session.token.get("access_token")
+            if not isinstance(token, str) or not token:
+                raise HealthPlanetAuthError("official_oauth_token_missing")
+            return token
+        if not self._access_token:
+            raise HealthPlanetAuthError("official_oauth_token_missing")
+        return self._access_token
+
+    async def _async_fetch_endpoint(
+        self,
+        url: str,
+        tags: tuple[str, ...],
+        parser: Any,
+    ) -> tuple[OfficialParseResult, int]:
+        access_token = await self._async_current_access_token()
         form = {
-            "access_token": self._access_token,
-            "tag": f"{OFFICIAL_TAG_WEIGHT},{OFFICIAL_TAG_BODY_FAT}",
+            "access_token": access_token,
+            "tag": ",".join(tags),
             "date": "1",
         }
         try:
             async with self._session.post(
-                OFFICIAL_DATA_URL,
+                url,
                 data=form,
                 headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
@@ -210,12 +187,92 @@ class OfficialApiClient:
             form = {}
         payload = _fixed_json(body)
         body = ""
-        parsed = parse_official_payload(payload)
-        measurements = {kind: values[-1] if values else None for kind, values in parsed.items()}
-        return ProviderSnapshot(measurements=measurements)
+        return parser(payload), response.status
+
+    async def async_fetch(self) -> ProviderSnapshot:
+        measurements: dict[int, Any] = {}
+        errors: dict[int, str] = {}
+        statuses: dict[str, EndpointStatus] = {}
+        self._last_endpoint_statuses = statuses
+        endpoints = (
+            (
+                "innerscan",
+                OFFICIAL_INNERSCAN_URL,
+                (OFFICIAL_TAG_WEIGHT, OFFICIAL_TAG_BODY_FAT),
+                OFFICIAL_INNERSCAN_KINDS,
+                parse_official_innerscan_payload,
+            ),
+            (
+                "sphygmomanometer",
+                OFFICIAL_SPHYGMO_URL,
+                (OFFICIAL_TAG_SYSTOLIC, OFFICIAL_TAG_DIASTOLIC, OFFICIAL_TAG_PULSE),
+                OFFICIAL_SPHYGMO_KINDS,
+                parse_official_sphygmomanometer_payload,
+            ),
+        )
+        for name, url, tags, kinds, parser in endpoints:
+            try:
+                parsed, http_status = await self._async_fetch_endpoint(url, tags, parser)
+            except HealthPlanetAuthError:
+                statuses[name] = EndpointStatus(
+                    outcome="auth_error",
+                    unavailable_tags=tags,
+                    error_id="official_api_authentication_failed",
+                )
+                raise
+            except HealthPlanetRateLimitError:
+                error_id = "official_api_rate_limited"
+                measurements.update(dict.fromkeys(kinds))
+                errors.update(dict.fromkeys(kinds, error_id))
+                statuses[name] = EndpointStatus(
+                    outcome="rate_limited",
+                    unavailable_tags=tags,
+                    error_id=error_id,
+                )
+                continue
+            except HealthPlanetConnectionError:
+                error_id = "official_api_connection_failed"
+                measurements.update(dict.fromkeys(kinds))
+                errors.update(dict.fromkeys(kinds, error_id))
+                statuses[name] = EndpointStatus(
+                    outcome="http_error",
+                    unavailable_tags=tags,
+                    error_id=error_id,
+                )
+                continue
+            except HealthPlanetSchemaError as error:
+                error_id = str(error)
+                measurements.update(dict.fromkeys(kinds))
+                errors.update(dict.fromkeys(kinds, error_id))
+                statuses[name] = EndpointStatus(
+                    outcome="parser_error",
+                    http_status=200,
+                    unavailable_tags=tags,
+                    error_id=error_id,
+                )
+                continue
+            measurements.update(parsed.measurements)
+            statuses[name] = EndpointStatus(
+                outcome=(
+                    "available"
+                    if any(value is not None for value in parsed.measurements.values())
+                    else "null"
+                ),
+                http_status=http_status,
+                record_count=parsed.record_count,
+                available_tags=parsed.available_tags,
+                unavailable_tags=parsed.unavailable_tags,
+                complete_pair_found=parsed.complete_pair_found,
+            )
+        return ProviderSnapshot(
+            measurements=measurements,
+            errors=errors,
+            endpoint_statuses=dict(statuses),
+        )
 
     async def async_close(self) -> None:
         self._access_token = ""
+        self._oauth_session = None
 
 
 class WebsiteApiClient:
@@ -230,11 +287,13 @@ class WebsiteApiClient:
         login_id: str,
         password: str,
         request_interval: float = WEBSITE_REQUEST_INTERVAL_SECONDS,
+        kinds: tuple[int, ...] = WEBSITE_KINDS,
     ) -> None:
         self._session = session
         self._login_id = login_id
         self._password = password
         self._request_interval = request_interval
+        self._kinds = tuple(kinds)
         self._last_request_at: float | None = None
         self._authenticated = False
         self._lock = asyncio.Lock()
@@ -355,7 +414,7 @@ class WebsiteApiClient:
         errors: dict[int, str] = {}
         statuses: dict[int, KindStatus] = {}
         self._last_kind_statuses = statuses
-        for kind in WEBSITE_KINDS:
+        for kind in self._kinds:
             try:
                 status, content_type, body, final_url = await self._request(
                     "GET",

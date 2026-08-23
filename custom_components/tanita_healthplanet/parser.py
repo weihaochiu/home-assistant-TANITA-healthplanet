@@ -9,7 +9,16 @@ from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .const import JST_TIMEZONE, METRICS, OFFICIAL_TAG_BODY_FAT, OFFICIAL_TAG_WEIGHT
+from .const import (
+    JST_TIMEZONE,
+    METRICS,
+    OFFICIAL_TAG_BODY_FAT,
+    OFFICIAL_TAG_DIASTOLIC,
+    OFFICIAL_TAG_PULSE,
+    OFFICIAL_TAG_SYSTOLIC,
+    OFFICIAL_TAG_WEIGHT,
+    SOURCE_OFFICIAL,
+)
 from .errors import HealthPlanetBackendCodeError, HealthPlanetSchemaError
 from .models import Measurement
 
@@ -217,8 +226,18 @@ _OFFICIAL_TAG_KIND = {OFFICIAL_TAG_WEIGHT: 1, OFFICIAL_TAG_BODY_FAT: 2}
 _OFFICIAL_KNOWN_KEYS = {"birth_date", "data", "height", "sex"}
 
 
-def parse_official_payload(payload: Any) -> dict[int, list[Measurement]]:
-    """Parse only the two tags currently supported by the official API."""
+@dataclass(frozen=True)
+class OfficialParseResult:
+    """Official measurements plus privacy-safe structural metadata."""
+
+    measurements: dict[int, Measurement | None]
+    record_count: int
+    available_tags: tuple[str, ...]
+    unavailable_tags: tuple[str, ...]
+    complete_pair_found: bool | None = None
+
+
+def _official_records(payload: Any) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
         raise HealthPlanetSchemaError("official_response_not_object")
     data = payload.get("data", [])
@@ -231,34 +250,129 @@ def parse_official_payload(payload: Any) -> dict[int, list[Measurement]]:
             "official_data_container_invalid",
             _safe_unknown_fields(payload, _OFFICIAL_KNOWN_KEYS),
         )
-    result: dict[int, list[Measurement]] = {1: [], 2: []}
+    if not all(isinstance(record, dict) for record in records):
+        raise HealthPlanetSchemaError("official_record_not_object")
+    return records
+
+
+def _official_measurement(
+    record: dict[str, Any], *, kind: int, measured_at: datetime, value: float | int
+) -> Measurement:
+    model = record.get("model")
+    if not isinstance(model, str) or len(model) > 32:
+        model = None
+    description = METRICS[kind]
+    return Measurement(
+        metric_key=description.key,
+        value=value,
+        unit=description.unit,
+        measured_at=measured_at,
+        source=SOURCE_OFFICIAL,
+        model=model,
+        experimental=False,
+        raw_kind=kind,
+    )
+
+
+def parse_official_innerscan_payload(payload: Any) -> OfficialParseResult:
+    """Parse documented innerscan records and select each tag's latest valid row."""
+    records = _official_records(payload)
+    candidates: dict[int, list[Measurement]] = {1: [], 2: []}
     for record in records:
-        if not isinstance(record, dict):
-            raise HealthPlanetSchemaError("official_record_not_object")
         tag = record.get("tag")
         kind = _OFFICIAL_TAG_KIND.get(str(tag))
         if kind is None:
             continue
-        value = _numeric(record.get("keydata"))
-        measured_at = parse_jst_timestamp(record.get("date"))
-        if value is None or measured_at is None:
-            raise HealthPlanetSchemaError("official_record_fields_invalid")
-        model = record.get("model")
-        if not isinstance(model, str) or len(model) > 32:
-            model = None
-        description = METRICS[kind]
-        result[kind].append(
-            Measurement(
-                metric_key=description.key,
-                value=value,
-                unit=description.unit,
-                measured_at=measured_at,
-                source="healthplanet_official_api",
-                model=model,
-                experimental=False,
-                raw_kind=kind,
-            )
+        raw_value = record.get("keydata")
+        raw_date = record.get("date")
+        if _missing(raw_value) or _missing(raw_date):
+            continue
+        value = _numeric(raw_value)
+        measured_at = parse_jst_timestamp(raw_date)
+        if value is None:
+            raise HealthPlanetSchemaError("official_record_value_invalid")
+        if measured_at is None:
+            raise HealthPlanetSchemaError("official_record_date_invalid")
+        candidates[kind].append(
+            _official_measurement(record, kind=kind, measured_at=measured_at, value=value)
         )
-    for measurements in result.values():
-        measurements.sort(key=lambda item: item.measured_at)
-    return result
+    measurements = {
+        kind: max(values, key=lambda item: item.measured_at) if values else None
+        for kind, values in candidates.items()
+    }
+    available = tuple(
+        METRICS[kind].official_tag or "" for kind in (1, 2) if measurements[kind] is not None
+    )
+    unavailable = tuple(
+        METRICS[kind].official_tag or "" for kind in (1, 2) if measurements[kind] is None
+    )
+    return OfficialParseResult(
+        measurements=measurements,
+        record_count=len(records),
+        available_tags=available,
+        unavailable_tags=unavailable,
+    )
+
+
+_SPHYGMO_TAG_KIND = {
+    OFFICIAL_TAG_SYSTOLIC: 101,
+    OFFICIAL_TAG_DIASTOLIC: 102,
+    OFFICIAL_TAG_PULSE: 103,
+}
+
+
+def parse_official_sphygmomanometer_payload(payload: Any) -> OfficialParseResult:
+    """Select the latest complete blood-pressure pair and co-timed pulse."""
+    records = _official_records(payload)
+    grouped: dict[datetime, dict[int, Measurement]] = {}
+    for record in records:
+        kind = _SPHYGMO_TAG_KIND.get(str(record.get("tag")))
+        if kind is None:
+            continue
+        raw_value = record.get("keydata")
+        raw_date = record.get("date")
+        if _missing(raw_value) or _missing(raw_date):
+            continue
+        value = _numeric(raw_value)
+        measured_at = parse_jst_timestamp(raw_date)
+        if value is None:
+            raise HealthPlanetSchemaError("official_record_value_invalid")
+        if measured_at is None:
+            raise HealthPlanetSchemaError("official_record_date_invalid")
+        # If duplicate tags exist at one timestamp, retaining the last row is
+        # deterministic and never mixes measurements across timestamps.
+        grouped.setdefault(measured_at, {})[kind] = _official_measurement(
+            record, kind=kind, measured_at=measured_at, value=value
+        )
+
+    complete_times = [
+        measured_at
+        for measured_at, measurements in grouped.items()
+        if 101 in measurements and 102 in measurements
+    ]
+    selected = grouped[max(complete_times)] if complete_times else {}
+    measurements = {kind: selected.get(kind) for kind in (101, 102, 103)}
+    available = tuple(
+        METRICS[kind].official_tag or ""
+        for kind in (101, 102, 103)
+        if measurements[kind] is not None
+    )
+    unavailable = tuple(
+        METRICS[kind].official_tag or "" for kind in (101, 102, 103) if measurements[kind] is None
+    )
+    return OfficialParseResult(
+        measurements=measurements,
+        record_count=len(records),
+        available_tags=available,
+        unavailable_tags=unavailable,
+        complete_pair_found=bool(complete_times),
+    )
+
+
+def parse_official_payload(payload: Any) -> dict[int, list[Measurement]]:
+    """Compatibility wrapper for the original innerscan parser API."""
+    parsed = parse_official_innerscan_payload(payload)
+    return {
+        kind: [measurement] if measurement is not None else []
+        for kind, measurement in parsed.measurements.items()
+    }

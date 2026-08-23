@@ -1,82 +1,91 @@
 {
+  "title": "TANITA HealthPlanet",
   "config": {
     "abort": {
-      "already_configured": "This HealthPlanet account/provider is already configured.",
-      "reauth_successful": "Reauthentication was successful."
+      "already_configured": "This HealthPlanet website account is already configured.",
+      "reauth_successful": "Reauthentication was successful.",
+      "reconfigure_no_changes": "No changes were made.",
+      "reconfigure_not_supported": "This entry is already using an official-capable mode."
     },
     "error": {
       "cannot_connect": "Unable to connect to HealthPlanet.",
-      "experimental_confirmation_required": "You must explicitly accept the experimental website-provider warning.",
-      "invalid_auth": "Authentication failed. Check the supplied credentials or authorization code.",
-      "manual_interaction_required": "HealthPlanet requires manual interaction. The integration will not bypass it.",
-      "storage_confirmation_required": "You must acknowledge the Home Assistant .storage credential risk."
+      "experimental_confirmation_required": "You must explicitly accept the experimental website endpoint risk.",
+      "invalid_auth": "Authentication failed. Check the supplied credentials.",
+      "manual_interaction_required": "HealthPlanet requires browser interaction that this integration will not bypass.",
+      "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault."
     },
     "step": {
-      "official": {
+      "user": {
+        "title": "Choose a HealthPlanet mode",
+        "description": "Hybrid is recommended. Official data supplies weight, body fat, blood pressure, and pulse; the experimental website source supplies only body-composition metrics unavailable from the official API.",
         "data": {
-          "account_label": "Account label",
-          "client_id": "OAuth client ID",
-          "client_secret": "OAuth client secret"
+          "mode": "Mode"
         },
-        "description": "Production default. The client secret and token are stored in Home Assistant .storage.",
-        "title": "Official HealthPlanet API"
+        "data_description": {
+          "mode": "hybrid (recommended), official_only, or website_only (experimental)"
+        }
       },
-      "official_authorize": {
-        "data": {"authorization_code": "Authorization code"},
-        "description": "Open {authorize_url}, approve innerscan, and copy the one-time code here.",
-        "title": "Authorize HealthPlanet"
+      "website_opt_in": {
+        "title": "Experimental website data",
+        "description": "Enable the unofficial website source only if you want the eight supplemental body-composition sensors. You must explicitly accept both warnings on the next step.",
+        "data": {
+          "enable_website": "Enable experimental website data"
+        }
       },
-      "reauth_official": {
-        "data": {"authorization_code": "New authorization code"},
-        "description": "Open {authorize_url}. The client secret is not shown.",
-        "title": "Reauthenticate official API"
+      "website": {
+        "title": "Experimental website source",
+        "description": "This internal endpoint is unofficial and may stop working. The password is stored in Home Assistant .storage, which is not a dedicated encrypted password vault. Cookies and CSRF state remain in memory only.",
+        "data": {
+          "login_id": "HealthPlanet login ID",
+          "password": "HealthPlanet password",
+          "experimental_confirmed": "I accept the unofficial endpoint risk",
+          "storage_warning_confirmed": "I accept the .storage credential risk"
+        }
       },
       "reauth_website": {
+        "title": "Reauthenticate website source",
+        "description": "Only website credentials are replaced. The existing password is never prefilled.",
         "data": {
           "login_id": "HealthPlanet login ID",
           "password": "HealthPlanet password"
-        },
-        "description": "The password is intentionally not prefilled.",
-        "title": "Reauthenticate experimental website provider"
+        }
       },
-      "user": {
-        "data": {"provider": "Provider"},
-        "title": "Choose a HealthPlanet provider"
-      },
-      "website": {
+      "reconfigure": {
+        "title": "Upgrade to Hybrid",
+        "description": "This starts the standard Home Assistant OAuth flow and preserves the existing website credentials.",
         "data": {
-          "experimental_confirmed": "I accept the unofficial endpoint risk",
-          "login_id": "HealthPlanet login ID",
-          "password": "HealthPlanet password",
-          "storage_warning_confirmed": "I accept that .storage is not a dedicated encrypted password vault"
-        },
-        "description": "Disabled-by-default experimental provider. The endpoint is unofficial and may change or be blocked. Cookies, CSRF tokens, HTML, and raw JSON remain in memory only.",
-        "title": "Experimental website provider"
+          "upgrade_to_hybrid": "Upgrade this Website-only entry to Hybrid"
+        }
       }
-    }
-  },
-  "entity": {
-    "sensor": {
-      "basal_metabolic_rate": {"name": "Basal metabolic rate"},
-      "body_fat_mass": {"name": "Body fat mass"},
-      "body_fat_percentage": {"name": "Body fat percentage"},
-      "body_water_percentage": {"name": "Body water percentage"},
-      "estimated_bone_mass": {"name": "Estimated bone mass"},
-      "metabolic_age": {"name": "Metabolic age"},
-      "muscle_mass": {"name": "Muscle mass"},
-      "muscle_quality_score": {"name": "Muscle quality score (experimental)"},
-      "visceral_fat_level": {"name": "Visceral fat level"},
-      "weight": {"name": "Weight"}
     }
   },
   "options": {
     "step": {
       "init": {
-        "data": {"update_interval": "Update interval (minutes)"},
-        "description": "Minimum 30 minutes.",
-        "title": "HealthPlanet options"
+        "title": "HealthPlanet polling",
+        "description": "Minimum 30 minutes. The website endpoint is unofficial and should not be polled frequently.",
+        "data": {
+          "official_update_interval": "Official API interval (minutes)",
+          "website_update_interval": "Website interval (minutes)"
+        }
       }
     }
   },
-  "title": "TANITA HealthPlanet"
+  "entity": {
+    "sensor": {
+      "weight": {"name": "Weight"},
+      "body_fat_percentage": {"name": "Body fat percentage"},
+      "systolic_blood_pressure": {"name": "Systolic blood pressure"},
+      "diastolic_blood_pressure": {"name": "Diastolic blood pressure"},
+      "pulse": {"name": "Pulse"},
+      "body_fat_mass": {"name": "Body fat mass"},
+      "visceral_fat_level": {"name": "Visceral fat level"},
+      "basal_metabolic_rate": {"name": "Basal metabolic rate"},
+      "muscle_mass": {"name": "Muscle mass"},
+      "estimated_bone_mass": {"name": "Estimated bone mass"},
+      "metabolic_age": {"name": "Metabolic age"},
+      "body_water_percentage": {"name": "Body water percentage"},
+      "muscle_quality_score": {"name": "Muscle quality score (experimental)"}
+    }
+  }
 }
