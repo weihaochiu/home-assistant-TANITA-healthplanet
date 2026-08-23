@@ -19,10 +19,7 @@ line-length = 100
 target-version = "py314"
 include = [
   "custom_components/tanita_healthplanet/*.py",
-  "tests/test_config_flow*.py",
-  "tests/test_ha_*.py",
-  "tests/test_hacs_structure.py",
-  "tests/test_production_*.py",
+  "tests/*.py",
 ]
 
 [tool.ruff.lint]
