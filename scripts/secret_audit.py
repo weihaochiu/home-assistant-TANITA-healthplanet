@@ -49,6 +49,7 @@ STRUTS_TOKEN_VALUE_PATTERN = re.compile(
     rb"(?i)org\.apache\.struts\.taglib\.html\.TOKEN\s*[=:]\s*"
     rb"[\"']?([^\s\"',}\]]{6,})"
 )
+GITHUB_TOKEN_VALUE_PATTERN = re.compile(rb"(?i)\b(?:ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})\b")
 WINDOWS_USER_PATH = re.compile(rb"(?i)[A-Z]:\\Users\\([^\\\r\n]{2,})")
 MEASUREMENT_TIMESTAMP = re.compile(rb"[\"'](\d{12}(?:\d{2})?)[\"']")
 SAFE_LITERAL_MARKERS = (
@@ -180,6 +181,15 @@ def _content_findings(
     synthetic = _is_synthetic_path(path) or b'"synthetic": true' in data.lower()
 
     text = data.decode("utf-8", errors="ignore")
+    for token_match in GITHUB_TOKEN_VALUE_PATTERN.finditer(data):
+        findings.append(
+            Finding(
+                location,
+                "hardcoded_github_token",
+                object_id,
+                _mask(token_match.group(0)),
+            )
+        )
     for email_match in EMAIL_PATTERN.finditer(text):
         value = email_match.group(0)
         if value.casefold() in SAFE_EMAIL_LIKE_LITERALS:

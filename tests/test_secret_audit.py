@@ -102,6 +102,23 @@ def test_required_hass_brand_retina_filename_is_not_an_email_identifier():
     assert synthetic == []
 
 
+def test_github_token_variable_names_are_safe_but_values_are_rejected():
+    safe = secret_audit._content_findings(
+        PurePosixPath(".github/workflows/release.yml"),
+        b"GH_TOKEN: ${{ github.token }}\nGITHUB_TOKEN: ${{ github.token }}",
+        location=".github/workflows/release.yml",
+    )
+    assert safe == []
+    token = b"ghp_" + b"a" * 36
+    findings = secret_audit._content_findings(
+        PurePosixPath("config.yml"),
+        b"token: " + token,
+        location="config.yml",
+    )
+    assert {finding.risk for finding in findings} >= {"hardcoded_github_token"}
+    assert token.decode() not in repr(findings)
+
+
 def test_backup_rules_cover_browser_and_probe_artifacts():
     for path in (
         Path("browser_exports/network.json"),
