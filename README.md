@@ -15,6 +15,24 @@ This independently developed open-source project is not affiliated with, not end
 
 [![Add HealthPlanet for Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
 
+## Safe updates
+
+When installed through HACS, HealthPlanet for Home Assistant includes a native, optional **Safe update HealthPlanet** button. No Blueprint, add-on, second integration, token, or additional HACS installation is required. The button is created once for the whole repository, not once per family member, and it only runs after an explicit press; there are no unattended updates or surprise restarts.
+
+Before using it, configure **Settings → System → Backups**. Safe Update uses those existing automatic-backup contents, locations, encryption/password, and retention settings. When pressed, it:
+
+1. resolves the HealthPlanet HACS update entity through Home Assistant's public registries and confirms an update is available;
+2. calls `backup.create_automatic` and proves a new backup entered `in_progress` before accepting a later `completed` event;
+3. calls the standard `update.install` action without a native `backup` flag;
+4. verifies that the entity is no longer updating and that `installed_version` equals the captured target version;
+5. optionally calls `homeassistant.restart` (enabled by default).
+
+If automatic discovery is unavailable, open the integration's **Configure** options once and select its HACS update entity. This fallback stores the entity's HACS registry identity, so renaming the entity does not hard-code its old entity ID. The restart preference is also available in Configure and applies installation-wide.
+
+Backup failure or timeout always blocks installation. Update failure or timeout always blocks restart. Safe Update restarts Home Assistant Core only; it never reboots the Home Assistant OS host. HACS remains responsible for repository download/install and its own rollback behavior. HACS repository update entities may not expose Home Assistant's native “Back up before updating” checkbox, so this integration creates and verifies the Home Assistant backup before invoking HACS.
+
+Bootstrap note: v0.2.0 does not contain this code. The one-time v0.2.0 → v0.2.1 upgrade still uses the normal HACS update flow followed by a manual Home Assistant restart. Native Safe Update can then handle v0.2.1 → v0.2.2 and later updates.
+
 ## What you get
 
 New accounts use one Hybrid entry with 13 sensors:
@@ -88,10 +106,20 @@ Diagnostics include source outcomes, structural row counts, safe sync counters, 
 - Official unavailable: use Reauth; Website complementary sensors remain independent.
 - Website unavailable: check Website credentials; official sensors remain independent.
 - Historical sync failed: current sensors continue; retry with the device's **Sync history** button.
-- HA integration icon missing: restart after installing the complete v0.2.0 component, including `brand/`.
+- HA integration icon missing: restart after installing the complete v0.2.1 component, including `brand/`.
 - HACS repository list still shows a placeholder: HA local integration branding and the HACS repository-list brand proxy are separate paths; this can be a HACS frontend limitation.
 
 See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECTURE.md) for more detail.
+
+## Maintainer release process
+
+1. Update the manifest, `VERSION`, `USER_AGENT`, changelog, and documentation.
+2. Run the full local validation suite, push `main`, and wait for Tests, HACS, and Hassfest.
+3. Create and push an annotated stable semantic-version tag such as `v0.2.1`.
+4. GitHub Actions revalidates version consistency, tests, coverage, privacy, HACS, and Hassfest before automatically publishing the stable GitHub Release.
+5. HACS detects the published release through its normal background refresh.
+
+No Personal Access Token is required. Release automation uses only the repository-scoped `GITHUB_TOKEN` supplied inside GitHub Actions.
 
 ## Trademark notice
 

@@ -15,6 +15,24 @@ HealthPlanet for Home Assistant 是用於存取使用者本人 TANITA HealthPlan
 
 [![新增 HealthPlanet for Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
 
+## 安全更新
+
+透過 HACS 安裝 HealthPlanet for Home Assistant 後，integration 會原生提供可選的「**安全更新 HealthPlanet**」按鈕；不需要另外匯入 Blueprint、安裝 Add-on、第二個 integration、token 或另一份 HACS repository。整套 HA 只會建立一個 repository-level 按鈕，不會每位家庭成員各建一個。只有使用者明確按下按鈕才會執行，不會無人值守自動更新或突然重啟。
+
+使用前請先完成「設定 → 系統 → 備份」。安全更新會沿用其中的 automatic backup 內容、儲存位置、加密／密碼及 retention 設定。按下後會：
+
+1. 透過 Home Assistant public registry 找到 HealthPlanet 的 HACS update entity，並確認有新版；
+2. 呼叫 `backup.create_automatic`，且必須先證明本次新備份進入 `in_progress`，才接受後續新的 `completed`；
+3. 呼叫標準 `update.install`，不傳 HACS 未宣告支援的 native `backup` flag；
+4. 確認更新已結束，而且 `installed_version` 等於事前記錄的目標版本；
+5. 視設定呼叫 `homeassistant.restart`（預設啟用）。
+
+若無法自動辨識，可到本 integration 的「設定／Configure」選擇一次 HACS update entity。Fallback 會保存 HACS registry identity，因此 entity 重新命名後不會 hard-code 舊 entity ID。同一頁也可停用成功後自動重新啟動；設定對整套 installation 生效。
+
+備份失敗或 timeout 一定阻止安裝；更新失敗或 timeout 一定阻止 restart。安全更新只會重新啟動 Home Assistant Core，不會重新啟動 Home Assistant OS 主機。Repository 的下載、安裝及 HACS 自己的 rollback 行為仍由 HACS 負責。由於 HACS repository update entity 可能沒有 Home Assistant 原生的「更新前備份」選項，本 integration 會先自行建立並驗證 Home Assistant backup，再呼叫 HACS。
+
+啟動限制：v0.2.0 尚未包含這段程式，因此 v0.2.0 → v0.2.1 這一次仍需使用一般 HACS update，再手動 restart Home Assistant。從 v0.2.1 → v0.2.2 及之後版本才可直接使用 Native Safe Update。
+
 ## 可取得的資料
 
 新帳號只使用一個 Hybrid entry，共 13 個 sensors：
@@ -88,10 +106,20 @@ Diagnostics 只含來源結果、結構 row count、安全的同步 counters 與
 - Official source unavailable：執行 Reauth；Website 補充 sensors 仍獨立運作。
 - Website source unavailable：檢查 Website credentials；官方 sensors 仍獨立運作。
 - Historical sync failed：current sensors 不受影響；按 device 的「同步歷史」重試。
-- HA 整合 icon 遺失：確認完整安裝 v0.2.0（包含 `brand/`）並重啟。
+- HA 整合 icon 遺失：確認完整安裝 v0.2.1（包含 `brand/`）並重啟。
 - HACS repository list 仍是 placeholder：HA local integration branding 與 HACS repository-list brand proxy 是不同路徑，可能是 HACS frontend 已知限制。
 
 更多內容見[疑難排解](docs/TROUBLESHOOTING.md)與[架構](docs/ARCHITECTURE.md)。
+
+## 維護者 Release 流程
+
+1. 更新 manifest、`VERSION`、`USER_AGENT`、CHANGELOG 與文件。
+2. 執行完整本機驗證，push `main`，並等待 Tests、HACS、Hassfest 全部成功。
+3. 建立並 push annotated stable semantic-version tag，例如 `v0.2.1`。
+4. GitHub Actions 重新驗證版本一致性、測試、coverage、privacy、HACS 與 Hassfest，通過後自動發布 stable GitHub Release。
+5. HACS 透過正常 background refresh 偵測新 Release。
+
+不需要 Personal Access Token。Release automation 只使用 GitHub Actions 執行期間由 repository 提供的 `GITHUB_TOKEN`。
 
 ## 商標與非官方專案聲明
 

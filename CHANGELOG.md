@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-08-27
+
+- Added automatic GitHub Release creation for validated semantic-version tags.
+- Added release/version consistency gates using GitHub Actions and the repository-scoped `GITHUB_TOKEN`.
+- Updated the original project branding with the owner-selected smart scale, cloud, and smart-home synchronization icon.
+- Preserved the unofficial branding policy without bundling TANITA or HealthPlanet official artwork.
+- Added a native Safe Update feature that creates and verifies a Home Assistant backup before installing a HACS update, then optionally restarts Home Assistant after successful installation.
+- Included Safe Update with the HACS integration so no separate Blueprint, add-on, or second integration is required.
+
 ## 0.2.0 — 2026-08-27
 
 - Added Hybrid-only setup for new accounts.
