@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 — 2026-08-27
+
+- Added Hybrid-only setup for new accounts.
+- Added family-member labels and multi-account UX.
+- Replaced incompatible callback OAuth with a HealthPlanet-compatible manual authorization-code flow.
+- Added shared per-Home-Assistant Application Credentials support.
+- Added historical synchronization using provider measurement timestamps.
+- Added official 90-day and Website 31-day history support.
+- Added `measurement_time` attributes and an in-device Sync history button.
+- Added original local integration branding without TANITA or HealthPlanet official artwork.
+- Preserved v0.1.x Website-only and Official-only entries for migration and recovery.
+- Renamed the user-facing integration to "HealthPlanet for Home Assistant" to make its unofficial and independent status clearer.
+- Added explicit unofficial-project and trademark notices.
+
+The Website source remains experimental because its endpoint is undocumented and may change.
+
 ## 0.1.1 — 2026-08-27
 
 - Fixed experimental Website row parsing observed during the first HACS-installed real-device test.

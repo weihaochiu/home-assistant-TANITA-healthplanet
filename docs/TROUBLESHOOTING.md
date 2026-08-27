@@ -2,7 +2,19 @@
 
 ## Reauthentication requested
 
-Open the integration's reauthentication notification. Official reauthentication uses the standard external OAuth flow and requires the `innerscan,sphygmomanometer` scope. Website reauthentication asks only for new website credentials. In Hybrid mode the failing source is repaired without clearing the other source's credentials or data; when both sources require reauthentication, Official OAuth is completed first and Website follows.
+Open the integration's reauthentication notification. Official reauthentication opens HealthPlanet, then asks you to copy the one-time code back to Home Assistant within 10 minutes. It does not return through My Home Assistant. Website reauthentication asks only for new Website credentials. The failing source is repaired without clearing the other source's credentials or data.
+
+## Missing Application Credentials
+
+Follow the [API application setup guide](HEALTHPLANET_API_SETUP.md). One Client ID / Client Secret is shared by all family members on one Home Assistant; do not enter the HealthPlanet Website login in Application Credentials.
+
+## Historical sync failed
+
+Current sensors remain available because history is a separate failure domain. Retry with the device's **Sync history** button. Official history is capped at 90 days, Website history at 31 days, and Recorder statistics are hourly even though `measurement_time` preserves the exact provider time.
+
+## Brand icon missing
+
+Restart after installing the complete release and confirm `custom_components/tanita_healthplanet/brand/` exists. The Home Assistant integration icon and HACS repository-list icon use different frontend paths; a HACS placeholder can remain an external local-brand limitation even when Devices & services displays the icon correctly.
 
 ## One source or sensor is unavailable
 
@@ -32,4 +44,4 @@ Share only redacted diagnostics. Never post credentials, client secrets, OAuth c
 
 ## Removing the integration
 
-Remove all config entries under Devices & services, uninstall the repository through HACS, and restart Home Assistant. If exposure is suspected, also revoke the OAuth grant and change the website password.
+Remove all **HealthPlanet for Home Assistant** config entries under Devices & services, uninstall the repository through HACS, and restart Home Assistant. If exposure is suspected, also revoke the OAuth grant and change the Website password.

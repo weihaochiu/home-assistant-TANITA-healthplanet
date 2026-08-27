@@ -1,74 +1,102 @@
-# TANITA HealthPlanet for Home Assistant
+# HealthPlanet for Home Assistant
 
-HACS-compatible Home Assistant custom integration. Version 0.1.1 uses an **official-first hybrid** architecture: documented HealthPlanet APIs own every metric they expose, while an explicitly enabled experimental website source fills only the remaining metrics.
+HealthPlanet for Home Assistant is an **unofficial** Home Assistant integration for accessing a user's own TANITA HealthPlanet measurements.
 
-Version 0.1.1 fixes Website row parsing discovered during the first HACS-installed real-device test. It resolves timestamp and measurement roles deterministically, expands strict timestamp support, and keeps the undocumented Website source experimental.
+This independently developed open-source project is not affiliated with, not endorsed by, not sponsored by, and not officially supported by TANITA Corporation, TANITA Health Link, or the Home Assistant project.
 
-## Installation
+## Install with HACS
 
-### Recommended: HACS
+[![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weihaochiu&repository=home-assistant-TANITA-healthplanet&category=integration)
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weihaochiu&repository=home-assistant-TANITA-healthplanet&category=integration)
-
-Open this repository directly in HACS. Requires HACS to be installed and configured first.
-
-1. Click the HACS button.
-2. Download TANITA HealthPlanet in HACS.
+1. Install and configure [HACS](https://www.hacs.xyz/docs/use/download/download/).
+2. Open this repository in HACS and download **HealthPlanet for Home Assistant**.
 3. Restart Home Assistant.
-4. Click the Add Integration button below.
+4. Complete **Before setup**, then add the integration.
 
-Don't have HACS yet?
+[![Add HealthPlanet for Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
 
-[Install and configure HACS first](https://www.hacs.xyz/docs/use/download/download/), then return here and use the button above.
+## What you get
 
-### Add the integration
+New accounts use one Hybrid entry with 13 sensors:
 
-After installing with HACS and restarting Home Assistant:
+| Source | Metrics |
+| --- | --- |
+| Official HealthPlanet API | Weight, body-fat percentage, systolic pressure, diastolic pressure, pulse |
+| Experimental Website source | Body-fat mass, visceral-fat level, basal metabolism, muscle mass, estimated bone mass, metabolic age, body-water percentage, muscle-quality score |
 
-[![Add TANITA HealthPlanet to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
+Hybrid never republishes Website kinds 1 or 2. A null muscle-quality score remains unavailable, not zero. The Website endpoint is undocumented and experimental; it may change without notice.
 
-This button starts the TANITA HealthPlanet config flow under **Settings → Devices & services → Add Integration**. It does not install the Python component and works only after HACS has installed `custom_components/tanita_healthplanet` and Home Assistant has restarted.
+## Before setup
 
-### Alternative: Manual installation / development testing
+HealthPlanet requires each Home Assistant installation to register its own API application. **You need only one Client ID / Client Secret per Home Assistant.** All family members on that Home Assistant share the application, but each member authorizes their own account and receives a separate access token.
 
-For development, recovery, or debugging, use the ZIP and component-replacement procedure in [Manual installation and configuration](#manual-installation-and-configuration).
+1. Install with HACS.
+2. [Register one HealthPlanet API application](docs/HEALTHPLANET_API_SETUP.md).
+3. Add it under **Settings → Devices & services → Application Credentials → HealthPlanet for Home Assistant**.
 
-## Modes
+Client ID / Client Secret are application credentials—not a HealthPlanet Website login and password.
 
-| Mode | Status | Authentication | Sensors |
-| --- | --- | --- | --- |
-| Official-first Hybrid | Recommended/default | Home Assistant Application Credentials OAuth, then optional website login | 13 |
-| Official API only | Supported | Home Assistant Application Credentials OAuth | 5 |
-| Experimental Website only | Experimental | HealthPlanet website login | 10 |
+| Credential | Purpose | Scope |
+| --- | --- | --- |
+| Client ID | HealthPlanet API application | Shared by one HA installation |
+| Client Secret | HealthPlanet API application | Shared by one HA installation |
+| OAuth access token | Official API account authorization | One per family member |
+| Website login ID | Experimental Website source | One per family member |
+| Website password | Experimental Website source | One per family member |
 
-Hybrid never reads weight or body-fat percentage from the website. Official endpoints provide weight, body-fat percentage, systolic and diastolic blood pressure, and pulse. The website source provides body-fat mass, visceral-fat level, basal metabolic rate (`kcal`), muscle mass, estimated bone mass, metabolic age, body-water percentage, and muscle-quality score.
+## Add the first family member
 
-Blood-pressure sensors require sphygmomanometer data in the HealthPlanet account. Values are published only from the latest timestamp containing both systolic and diastolic records. Pulse is included only when it has that same timestamp. An incomplete newer group does not replace the latest complete pair. Missing and null values stay unavailable and are never replaced with zero.
+1. Add **HealthPlanet for Home Assistant** and enter the family member name.
+2. Select the shared Application Credential.
+3. Open the HealthPlanet authorization link. It uses `https://www.healthplanet.jp/success.html`, not a My Home Assistant callback.
+4. Approve access, copy the one-time code, and paste it into Home Assistant within 10 minutes.
+5. Enter that member's separate HealthPlanet Website credentials and accept the experimental-source warnings.
 
-The website endpoint is authenticated but undocumented. It may change or be blocked without notice and is not guaranteed or supported by TANITA. Website-only mode exists for migration and troubleshooting; Hybrid is recommended.
+The authorization code exists in memory only during exchange. It is never logged, written to disk, added to diagnostics, or saved in the config entry. The Client Secret stays in Home Assistant Application Credentials; only the per-member access token is copied into the entry. HealthPlanet documents no refresh-token grant, so official authentication failures start Reauth and require a new one-time code.
 
-## Manual installation and configuration
+## Add another family member
 
-HACS installation and updates from the published GitHub release are recommended. For manual recovery or development only, download the target release/source archive and replace the entire `custom_components/tanita_healthplanet` folder; do not mix files from different versions. Restart Home Assistant, then use **Settings → Devices & services → Add integration → TANITA HealthPlanet**.
+Add the integration again, choose a different family-member name, reuse the same Application Credential, and authorize the other HealthPlanet account. Different Website accounts are allowed; the same Website login cannot create duplicate entries. Plaintext login IDs are never used in unique IDs, entity IDs, or logs.
 
-For Official or Hybrid mode, first add HealthPlanet under **Settings → Devices & services → Application Credentials** using the client ID and client secret from your HealthPlanet API application. Register this redirect URI with HealthPlanet:
+Devices are named `HealthPlanet - {family member}`. Entity unique IDs remain `{entry_id}_{kind}`.
 
-`https://my.home-assistant.io/redirect/oauth`
+## Historical data
 
-The requested OAuth scope is `innerscan,sphygmomanometer`. Existing official entries created before this scope was added must complete reauthentication. Hybrid then offers an explicit website opt-in and displays both the unofficial-endpoint and `.storage` credential warnings before accepting website credentials.
+- Official metrics: up to 90 days per sync using documented `date=1`, `from`, and `to` parameters.
+- Website supplementary metrics: the confirmed 31-day range only.
+- Initial setup performs a history sync; daily refreshes are incremental in memory, and the **Sync history** button re-fetches both sources.
+- `measurement_time` on each current sensor is the exact provider measurement timestamp.
+- Home Assistant owns state `last_updated`; the integration never changes it or writes directly to Recorder tables.
+- Recorder's supported external statistics import is hourly. Multiple measurements in one UTC hour produce arithmetic `mean`, `min`, and `max`; it does not pretend to provide exact-minute native state history.
+- Repeated setup, reload, refresh, or manual sync is idempotent through stable source/kind/time identities and Recorder's update-by-hour import behavior. No duplicate history JSON is stored in `.storage`.
 
-Existing v1 website entries migrate in place to Website-only mode without changing entity unique IDs or asking for the password again. Use **Reconfigure** to upgrade one safely to Hybrid through the standard external OAuth flow. Separate Official and Website polling intervals default to 60 minutes and can each be set to 30–1440 minutes in Options.
+History import is a separate failure domain: Recorder or history-provider failures never make current sensors unavailable.
 
-## Failure isolation, privacy, and removal
+## Legacy v0.1.x entries
 
-Official Innerscan, Official Sphygmomanometer, and Website polling have structural diagnostics, and the two source coordinators have independent availability and authentication state. One source failing does not erase fresh data from the other. Source-specific authentication failures start reauthentication; ordinary repeated failures are warning-throttled until recovery.
+Existing Website-only, Official-only, and Hybrid entries continue to run after migration. They are not automatically converted because authorization requires interaction. **Reconfigure** upgrades Website-only or Official-only in place, preserves the other source's credentials, and keeps all existing entity unique IDs.
 
-Home Assistant stores OAuth data and, when enabled, website login credentials in the config-entry store. `.storage` is not a dedicated encrypted password vault. Never paste credentials, cookies, tokens, raw responses, unredacted diagnostics, or real health values into an issue.
+## Privacy
 
-To remove stored integration data, delete all TANITA HealthPlanet config entries, uninstall the custom repository through HACS (or delete its component folder), restart Home Assistant, and revoke the OAuth grant or change the website password if needed.
+Diagnostics include source outcomes, structural row counts, safe sync counters, and sync execution time. They exclude family-member names, login IDs, credentials, authorization codes, tokens, health values, measurement timestamps, URLs with queries, and raw provider responses. See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md).
 
-Before public HACS submission, the repository owner still needs to choose a license, add a GitHub description and valid topics, and provide brand assets. CI excludes only those owner-controlled publication checks.
+## Troubleshooting
 
-See [Privacy](docs/PRIVACY.md), [Security](SECURITY.md), [Architecture](docs/ARCHITECTURE.md), and [Troubleshooting](docs/TROUBLESHOOTING.md).
+- Authorization does not return to HA: this is expected; copy the code from HealthPlanet's success page back into the open HA form.
+- Authorization code expired or invalid: generate another code and submit it within 10 minutes.
+- Missing Application Credentials: finish the [API application guide](docs/HEALTHPLANET_API_SETUP.md) once for this HA.
+- Official unavailable: use Reauth; Website complementary sensors remain independent.
+- Website unavailable: check Website credentials; official sensors remain independent.
+- Historical sync failed: current sensors continue; retry with the device's **Sync history** button.
+- HA integration icon missing: restart after installing the complete v0.2.0 component, including `brand/`.
+- HACS repository list still shows a placeholder: HA local integration branding and the HACS repository-list brand proxy are separate paths; this can be a HACS frontend limitation.
 
-To inspect diagnostics safely, open the integration's three-dot menu in Devices & services and select **Download diagnostics**. Review the file locally and redact it again before sharing; never attach it together with account screenshots or raw provider responses.
+See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECTURE.md) for more detail.
+
+## Trademark notice
+
+TANITA and HealthPlanet are trademarks, service names, or brands of their respective owners.
+
+Their names are used in this project only to identify compatibility with the corresponding service.
+
+This project is an independent, unofficial open-source integration and is not affiliated with, not endorsed by, not sponsored by, and not officially supported by TANITA Corporation or TANITA Health Link.
