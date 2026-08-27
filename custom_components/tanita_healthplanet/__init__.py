@@ -197,15 +197,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry)
         history_sync = HistorySyncManager(hass, entry, runtime)
         runtime.history_sync = history_sync
         await history_sync.async_sync(force=False)
-        for coordinator in runtime.coordinators:
-            entry.async_on_unload(
-                coordinator.async_add_listener(
-                    lambda: hass.async_create_task(
-                        history_sync.async_maybe_sync(),
-                        "HealthPlanet incremental history sync",
-                    )
-                )
+
+        def _schedule_history_sync() -> None:
+            hass.async_create_task(
+                history_sync.async_maybe_sync(),
+                "HealthPlanet incremental history sync",
             )
+
+        for coordinator in runtime.coordinators:
+            entry.async_on_unload(coordinator.async_add_listener(_schedule_history_sync))
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:
