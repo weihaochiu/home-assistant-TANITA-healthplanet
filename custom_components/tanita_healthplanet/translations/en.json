@@ -15,6 +15,7 @@
       "cannot_connect": "Unable to connect to HealthPlanet.",
       "experimental_confirmation_required": "You must explicitly accept the experimental website endpoint risk.",
       "invalid_auth": "Authentication failed. Check the supplied credentials.",
+      "invalid_hacs_update_entity": "Select the HACS update entity for HealthPlanet for Home Assistant.",
       "manual_interaction_required": "HealthPlanet requires browser interaction that this integration will not bypass.",
       "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault.",
       "token_exchange_failed": "HealthPlanet token exchange failed. Generate a new authorization code and try again."
@@ -56,21 +57,61 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_hacs_update_entity": "Select the HACS update entity for HealthPlanet for Home Assistant."
+    },
     "step": {
       "init": {
-        "title": "HealthPlanet polling and history",
-        "description": "Website history is fixed at the confirmed 31-day range. Official history is capped at 90 days.",
+        "title": "HealthPlanet polling, history, and Safe Update",
+        "description": "Website history is fixed at the confirmed 31-day range. Official history is capped at 90 days. Safe Update settings apply to the whole Home Assistant installation.",
         "data": {
           "official_update_interval": "Official API interval (minutes)",
           "website_update_interval": "Website interval (minutes)",
           "history_sync_enabled": "Enable daily history sync",
-          "official_history_days": "Official history range (days)"
+          "official_history_days": "Official history range (days)",
+          "hacs_update_entity": "HACS update entity (fallback if automatic discovery is unavailable)",
+          "restart_after_safe_update": "Restart Home Assistant after Safe Update"
         }
       }
     }
   },
   "entity": {
-    "button": {"sync_history": {"name": "Sync history"}},
+    "button": {
+      "sync_history": {"name": "Sync history"},
+      "safe_update": {
+        "name": "Safe update HealthPlanet",
+        "state_attributes": {
+          "last_stage": {
+            "name": "Last stage",
+            "state": {
+              "creating_backup": "Creating Home Assistant backup",
+              "waiting_for_backup": "Waiting for Home Assistant backup",
+              "updating": "Updating HealthPlanet",
+              "verifying_update": "Verifying HealthPlanet update",
+              "restarting": "Restarting Home Assistant",
+              "failed": "Update failed",
+              "completed": "Completed",
+              "idle": "Idle",
+              "resolving": "Resolving HACS update entity"
+            }
+          },
+          "last_result": {
+            "name": "Last result",
+            "state": {
+              "success": "Success",
+              "no_update": "HealthPlanet is already up to date",
+              "backup_failed": "Backup failed",
+              "backup_timeout": "Backup timed out",
+              "update_failed": "Update failed",
+              "update_timeout": "Update timed out",
+              "unsupported": "HACS update entity unavailable",
+              "busy": "Safe Update already running",
+              "restart_failed": "Restart failed"
+            }
+          }
+        }
+      }
+    },
     "sensor": {
       "weight": {"name": "Weight"},
       "body_fat_percentage": {"name": "Body fat percentage"},

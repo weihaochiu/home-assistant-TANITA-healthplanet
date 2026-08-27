@@ -238,6 +238,10 @@ async def async_remove_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry
             *(provider.async_close() for provider in _runtime_providers(runtime)),
             return_exceptions=True,
         )
+    from .safe_update import management_replacement_entry_id
+
+    if replacement := management_replacement_entry_id(hass, entry):
+        await hass.config_entries.async_reload(replacement)
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

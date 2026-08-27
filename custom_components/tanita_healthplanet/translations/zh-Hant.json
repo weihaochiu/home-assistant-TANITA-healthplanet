@@ -15,6 +15,7 @@
       "cannot_connect": "無法連線 HealthPlanet。",
       "experimental_confirmation_required": "必須明確接受非官方 Website endpoint 風險。",
       "invalid_auth": "驗證失敗，請檢查輸入的憑證。",
+      "invalid_hacs_update_entity": "請選擇 HealthPlanet for Home Assistant 的 HACS update entity。",
       "manual_interaction_required": "HealthPlanet 要求瀏覽器互動；本整合不會繞過安全機制。",
       "storage_confirmation_required": "必須確認 Home Assistant .storage 不是專用加密密碼庫。",
       "token_exchange_failed": "HealthPlanet token exchange 失敗，請重新取得 authorization code 後再試。"
@@ -56,21 +57,61 @@
     }
   },
   "options": {
+    "error": {
+      "invalid_hacs_update_entity": "請選擇 HealthPlanet for Home Assistant 的 HACS update entity。"
+    },
     "step": {
       "init": {
-        "title": "HealthPlanet 更新與歷史同步",
-        "description": "Website 歷史固定為已確認的 31 天；官方歷史上限為 90 天。",
+        "title": "HealthPlanet 更新、歷史同步與安全更新",
+        "description": "Website 歷史固定為已確認的 31 天；官方歷史上限為 90 天。安全更新設定套用於整套 Home Assistant。",
         "data": {
           "official_update_interval": "官方 API 更新間隔（分鐘）",
           "website_update_interval": "Website 更新間隔（分鐘）",
           "history_sync_enabled": "啟用每日歷史同步",
-          "official_history_days": "官方歷史範圍（天）"
+          "official_history_days": "官方歷史範圍（天）",
+          "hacs_update_entity": "HACS update entity（無法自動辨識時使用）",
+          "restart_after_safe_update": "安全更新完成後重新啟動 Home Assistant"
         }
       }
     }
   },
   "entity": {
-    "button": {"sync_history": {"name": "同步歷史"}},
+    "button": {
+      "sync_history": {"name": "同步歷史"},
+      "safe_update": {
+        "name": "安全更新 HealthPlanet",
+        "state_attributes": {
+          "last_stage": {
+            "name": "上次階段",
+            "state": {
+              "creating_backup": "正在建立 Home Assistant 備份",
+              "waiting_for_backup": "正在等待 Home Assistant 備份",
+              "updating": "正在更新 HealthPlanet",
+              "verifying_update": "正在驗證 HealthPlanet 更新",
+              "restarting": "正在重新啟動 Home Assistant",
+              "failed": "更新失敗",
+              "completed": "已完成",
+              "idle": "閒置",
+              "resolving": "正在辨識 HACS update entity"
+            }
+          },
+          "last_result": {
+            "name": "上次結果",
+            "state": {
+              "success": "成功",
+              "no_update": "HealthPlanet 已是最新版本",
+              "backup_failed": "備份失敗",
+              "backup_timeout": "備份逾時",
+              "update_failed": "更新失敗",
+              "update_timeout": "更新逾時",
+              "unsupported": "HACS update entity 無法使用",
+              "busy": "安全更新已在執行",
+              "restart_failed": "重新啟動失敗"
+            }
+          }
+        }
+      }
+    },
     "sensor": {
       "weight": {"name": "體重"},
       "body_fat_percentage": {"name": "體脂率"},

@@ -7,7 +7,7 @@ from datetime import timedelta
 
 DOMAIN = "tanita_healthplanet"
 PLATFORMS = ["sensor", "button"]
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 MODE_HYBRID = "hybrid"
 MODE_OFFICIAL_ONLY = "official_only"
@@ -39,6 +39,9 @@ CONF_WEBSITE_UPDATE_INTERVAL = "website_update_interval"
 CONF_REAUTH_SOURCE = "reauth_source"
 CONF_HISTORY_SYNC_ENABLED = "history_sync_enabled"
 CONF_OFFICIAL_HISTORY_DAYS = "official_history_days"
+CONF_HACS_UPDATE_ENTITY = "hacs_update_entity"
+CONF_HACS_UPDATE_UNIQUE_ID = "hacs_update_unique_id"
+CONF_RESTART_AFTER_SAFE_UPDATE = "restart_after_safe_update"
 
 DEFAULT_UPDATE_INTERVAL_MINUTES = 60
 MIN_UPDATE_INTERVAL_MINUTES = 30
@@ -49,6 +52,15 @@ DEFAULT_OFFICIAL_HISTORY_DAYS = 90
 MAX_OFFICIAL_HISTORY_DAYS = 90
 WEBSITE_HISTORY_DAYS = 31
 HISTORY_SYNC_INTERVAL = timedelta(hours=24)
+
+DEFAULT_RESTART_AFTER_SAFE_UPDATE = True
+SAFE_UPDATE_BACKUP_START_TIMEOUT_SECONDS = 5 * 60
+SAFE_UPDATE_BACKUP_COMPLETION_TIMEOUT_SECONDS = 120 * 60
+SAFE_UPDATE_INSTALL_TIMEOUT_SECONDS = 20 * 60
+SAFE_UPDATE_RESTART_DELAY_SECONDS = 1.0
+HACS_REPOSITORY_OWNER = "weihaochiu"
+HACS_REPOSITORY_DISPLAY_NAME = "HealthPlanet for Home Assistant"
+HACS_REPOSITORY_FULL_NAME = "weihaochiu/home-assistant-TANITA-healthplanet"
 
 OFFICIAL_AUTH_URL = "https://www.healthplanet.jp/oauth/auth"
 OFFICIAL_TOKEN_URL = "https://www.healthplanet.jp/oauth/token"
@@ -72,7 +84,7 @@ WEBSITE_HYBRID_KINDS = (3, 4, 5, 6, 7, 14, 22, 23)
 WEBSITE_PRIMARY_KINDS = tuple(kind for kind in WEBSITE_KINDS if kind != 23)
 WEBSITE_REQUEST_INTERVAL_SECONDS = 1.0
 REQUEST_TIMEOUT_SECONDS = 20
-USER_AGENT = "home-assistant-TANITA-healthplanet/0.2.0"
+USER_AGENT = "home-assistant-TANITA-healthplanet/0.2.1"
 
 API_SETUP_DOCS_URL = (
     "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet/"

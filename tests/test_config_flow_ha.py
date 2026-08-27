@@ -22,6 +22,7 @@ from custom_components.tanita_healthplanet.const import (
     CONF_ACCESS_TOKEN,
     CONF_ACCOUNT_LABEL,
     CONF_EXPERIMENTAL_CONFIRMED,
+    CONF_HACS_UPDATE_ENTITY,
     CONF_HISTORY_SYNC_ENABLED,
     CONF_LOGIN_ID,
     CONF_MODE,
@@ -30,6 +31,7 @@ from custom_components.tanita_healthplanet.const import (
     CONF_PASSWORD,
     CONF_PROVIDER,
     CONF_REAUTH_SOURCE,
+    CONF_RESTART_AFTER_SAFE_UPDATE,
     CONF_STORAGE_WARNING_CONFIRMED,
     CONF_WEBSITE_UPDATE_INTERVAL,
     DOMAIN,
@@ -346,6 +348,8 @@ async def test_hybrid_options_include_history_controls(hass):
         CONF_WEBSITE_UPDATE_INTERVAL,
         CONF_HISTORY_SYNC_ENABLED,
         CONF_OFFICIAL_HISTORY_DAYS,
+        CONF_HACS_UPDATE_ENTITY,
+        CONF_RESTART_AFTER_SAFE_UPDATE,
     }
 
 
@@ -371,6 +375,9 @@ async def test_split_diagnostics_exclude_credentials_values_and_measurement_time
             CONF_LOGIN_ID: "synthetic-private-user",
             CONF_PASSWORD: "synthetic-private-password-never-use",
             CONF_ACCESS_TOKEN: "synthetic-private-token-never-use",
+            "authorization_code": "synthetic-private-authorization-code-never-use",
+            "backup_encryption_key": "synthetic-private-backup-key-never-use",
+            "github_token": "synthetic-private-github-token-never-use",
         },
         options={},
         runtime_data=SimpleNamespace(
@@ -381,12 +388,21 @@ async def test_split_diagnostics_exclude_credentials_values_and_measurement_time
     )
     diagnostics = await async_get_config_entry_diagnostics(SimpleNamespace(), entry)
     rendered = repr(diagnostics)
-    assert set(diagnostics) == {"mode", "official", "website", "history"}
+    assert set(diagnostics) == {
+        "mode",
+        "official",
+        "website",
+        "history",
+        "safe_update",
+    }
     for forbidden in (
         "Private Family Name",
         "synthetic-private-user",
         "synthetic-private-password-never-use",
         "synthetic-private-token-never-use",
+        "synthetic-private-authorization-code-never-use",
+        "synthetic-private-backup-key-never-use",
+        "synthetic-private-github-token-never-use",
         "measurement_time",
     ):
         assert forbidden not in rendered

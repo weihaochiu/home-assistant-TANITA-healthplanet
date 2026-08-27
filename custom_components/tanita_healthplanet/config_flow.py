@@ -21,7 +21,13 @@ from homeassistant.helpers.config_entry_oauth2_flow import (
     ImplementationUnavailableError,
     async_get_implementations,
 )
-from homeassistant.helpers.selector import TextSelector, TextSelectorConfig, TextSelectorType
+from homeassistant.helpers.selector import (
+    EntitySelector,
+    EntitySelectorConfig,
+    TextSelector,
+    TextSelectorConfig,
+    TextSelectorType,
+)
 
 from .api import WebsiteApiClient
 from .application_credentials import HealthPlanetOAuth2Implementation
@@ -32,6 +38,8 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_EXPERIMENTAL_CONFIRMED,
+    CONF_HACS_UPDATE_ENTITY,
+    CONF_HACS_UPDATE_UNIQUE_ID,
     CONF_HISTORY_SYNC_ENABLED,
     CONF_LOGIN_ID,
     CONF_MODE,
@@ -39,10 +47,12 @@ from .const import (
     CONF_OFFICIAL_UPDATE_INTERVAL,
     CONF_PASSWORD,
     CONF_REAUTH_SOURCE,
+    CONF_RESTART_AFTER_SAFE_UPDATE,
     CONF_STORAGE_WARNING_CONFIRMED,
     CONF_WEBSITE_UPDATE_INTERVAL,
     DEFAULT_HISTORY_SYNC_ENABLED,
     DEFAULT_OFFICIAL_HISTORY_DAYS,
+    DEFAULT_RESTART_AFTER_SAFE_UPDATE,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
     DOMAIN,
     MAX_OFFICIAL_HISTORY_DAYS,
@@ -61,6 +71,7 @@ from .errors import (
     HealthPlanetError,
     HealthPlanetManualInteractionRequired,
 )
+from .safe_update import get_safe_update_manager, hacs_unique_id_for_entity
 
 _LOGGER = logging.getLogger(__package__)
 _AUTH_IMPLEMENTATION = "auth_implementation"
@@ -424,8 +435,40 @@ class HealthPlanetOptionsFlow(config_entries.OptionsFlow):
         self._entry = entry
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            selected_entity = user_input.get(CONF_HACS_UPDATE_ENTITY)
+            if selected_entity:
+                unique_id = hacs_unique_id_for_entity(self.hass, selected_entity)
+                if unique_id is None:
+                    errors["base"] = "invalid_hacs_update_entity"
+                else:
+                    user_input[CONF_HACS_UPDATE_UNIQUE_ID] = unique_id
+            else:
+                user_input.pop(CONF_HACS_UPDATE_UNIQUE_ID, None)
+            if not errors:
+                global_options = {
+                    key: user_input[key]
+                    for key in (
+                        CONF_HACS_UPDATE_ENTITY,
+                        CONF_HACS_UPDATE_UNIQUE_ID,
+                        CONF_RESTART_AFTER_SAFE_UPDATE,
+                    )
+                    if key in user_input
+                }
+                for other in self.hass.config_entries.async_entries(DOMAIN):
+                    if other.entry_id == self._entry.entry_id:
+                        continue
+                    options = dict(other.options)
+                    for key in (
+                        CONF_HACS_UPDATE_ENTITY,
+                        CONF_HACS_UPDATE_UNIQUE_ID,
+                        CONF_RESTART_AFTER_SAFE_UPDATE,
+                    ):
+                        options.pop(key, None)
+                    options.update(global_options)
+                    self.hass.config_entries.async_update_entry(other, options=options)
+                return self.async_create_entry(title="", data=user_input)
         mode = self._entry.data[CONF_MODE]
         schema: dict[Any, Any] = {}
         interval_validator = vol.All(
@@ -467,4 +510,20 @@ class HealthPlanetOptionsFlow(config_entries.OptionsFlow):
                     ),
                 )
             ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=MAX_OFFICIAL_HISTORY_DAYS))
-        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema))
+        current_entity = self._entry.options.get(CONF_HACS_UPDATE_ENTITY)
+        resolved_entity = get_safe_update_manager(self.hass).resolve_update_entity()
+        entity_default = resolved_entity or current_entity
+        entity_selector = EntitySelector(EntitySelectorConfig(domain="update", multiple=False))
+        if entity_default:
+            schema[vol.Optional(CONF_HACS_UPDATE_ENTITY, default=entity_default)] = entity_selector
+        else:
+            schema[vol.Optional(CONF_HACS_UPDATE_ENTITY)] = entity_selector
+        schema[
+            vol.Required(
+                CONF_RESTART_AFTER_SAFE_UPDATE,
+                default=self._entry.options.get(
+                    CONF_RESTART_AFTER_SAFE_UPDATE, DEFAULT_RESTART_AFTER_SAFE_UPDATE
+                ),
+            )
+        ] = bool
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema), errors=errors)

@@ -19,6 +19,7 @@ def test_required_hacs_integration_files_exist():
         "sensor.py",
         "diagnostics.py",
         "history.py",
+        "safe_update.py",
         "strings.json",
         "translations/en.json",
         "translations/zh-Hant.json",
@@ -41,14 +42,15 @@ def test_required_hacs_integration_files_exist():
         assert (ROOT / relative).is_file()
 
 
-def test_manifest_and_hacs_metadata_are_pinned_for_v020():
+def test_manifest_and_hacs_metadata_are_pinned_for_v021():
     manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     assert manifest["domain"] == "tanita_healthplanet"
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.2.1"
     assert manifest["name"] == "HealthPlanet for Home Assistant"
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"
+    assert "hacs" not in manifest.get("dependencies", [])
     assert hacs["homeassistant"] == "2026.8.0"
     assert hacs["name"] == "HealthPlanet for Home Assistant"
     keys = list(manifest)
@@ -69,6 +71,27 @@ def test_translations_have_same_sensor_keys():
     assert strings["title"] == "HealthPlanet for Home Assistant"
     assert english["title"] == strings["title"]
     assert traditional_chinese["title"] == strings["title"]
+
+
+def test_safe_update_translation_structures_stay_in_sync():
+    strings = json.loads((INTEGRATION / "strings.json").read_text(encoding="utf-8"))
+    english = json.loads((INTEGRATION / "translations" / "en.json").read_text(encoding="utf-8"))
+    traditional_chinese = json.loads(
+        (INTEGRATION / "translations" / "zh-Hant.json").read_text(encoding="utf-8")
+    )
+    for translation in (english, traditional_chinese):
+        assert set(translation["entity"]["button"]) == set(strings["entity"]["button"])
+        assert set(translation["options"]["step"]["init"]["data"]) == set(
+            strings["options"]["step"]["init"]["data"]
+        )
+        for attribute in ("last_stage", "last_result"):
+            assert set(
+                translation["entity"]["button"]["safe_update"]["state_attributes"][attribute][
+                    "state"
+                ]
+            ) == set(
+                strings["entity"]["button"]["safe_update"]["state_attributes"][attribute]["state"]
+            )
 
 
 def test_original_local_brand_assets_are_valid_png_files():
@@ -123,6 +146,8 @@ def test_options_flow_schema_contains_no_sensitive_fields():
     options_source = source.split("class HealthPlanetOptionsFlow", 1)[1]
     assert "CONF_OFFICIAL_UPDATE_INTERVAL" in options_source
     assert "CONF_WEBSITE_UPDATE_INTERVAL" in options_source
+    assert "CONF_HACS_UPDATE_ENTITY" in options_source
+    assert "CONF_RESTART_AFTER_SAFE_UPDATE" in options_source
     assert "CONF_PASSWORD" not in options_source
     assert "CONF_CLIENT_SECRET" not in options_source
 

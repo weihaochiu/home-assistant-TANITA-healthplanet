@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_MINUTES,
 )
 from .models import EndpointStatus, ProviderSnapshot
+from .safe_update import get_safe_update_manager
 
 
 def _endpoint(status: EndpointStatus | None, *, blood_pressure: bool) -> dict[str, Any]:
@@ -91,7 +92,31 @@ async def async_get_config_entry_diagnostics(
         "official": None,
         "website": None,
         "history": None,
+        "safe_update": None,
     }
+    if hasattr(hass, "data") and hasattr(hass, "states"):
+        manager = get_safe_update_manager(hass)
+        update_entity = manager.resolve_update_entity()
+        update_state = hass.states.get(update_entity) if update_entity else None
+        result["safe_update"] = {
+            "safe_update_supported": manager.supported,
+            "hacs_update_entity_resolved": update_entity is not None,
+            "update_available": update_state is not None and update_state.state == "on",
+            "last_safe_update_result": manager.last_result,
+            "last_safe_update_stage": manager.last_stage,
+            "last_completed_at": (
+                manager.last_completed_at.isoformat() if manager.last_completed_at else None
+            ),
+        }
+    else:
+        result["safe_update"] = {
+            "safe_update_supported": False,
+            "hacs_update_entity_resolved": False,
+            "update_available": False,
+            "last_safe_update_result": None,
+            "last_safe_update_stage": "idle",
+            "last_completed_at": None,
+        }
     history_sync = getattr(runtime, "history_sync", None)
     status = getattr(history_sync, "status", None)
     if status is not None:
