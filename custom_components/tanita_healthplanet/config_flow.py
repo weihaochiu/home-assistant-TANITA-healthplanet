@@ -205,6 +205,11 @@ class HealthPlanetConfigFlow(
             return self.async_update_reload_and_abort(entry, data=data)
         if source == config_entries.SOURCE_RECONFIGURE:
             entry = self._get_reconfigure_entry()
+            self.hass.config_entries.async_update_entry(
+                entry,
+                version=self.VERSION,
+                minor_version=self.MINOR_VERSION,
+            )
             return self.async_update_reload_and_abort(
                 entry,
                 data_updates={
@@ -280,6 +285,11 @@ class HealthPlanetConfigFlow(
                         entry = self._get_reconfigure_entry()
                         if self._duplicate_website_identity(identity, entry.entry_id):
                             return self.async_abort(reason="already_configured")
+                        self.hass.config_entries.async_update_entry(
+                            entry,
+                            version=self.VERSION,
+                            minor_version=self.MINOR_VERSION,
+                        )
                         return self.async_update_reload_and_abort(
                             entry,
                             data_updates={
