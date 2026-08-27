@@ -14,9 +14,17 @@ Blood-pressure sensors need an exact-timestamp systolic/diastolic pair. Pulse al
 
 The website endpoint is unofficial and may change or disappear without warning. A challenge/MFA page, changed login form, HTML graph response, or blocked automation triggers a controlled error or reauthentication. Complete any legitimate manual account action on the official site yourself, then retry later; do not bypass challenges. Do not increase polling frequency: the minimum is 30 minutes and the default is 60.
 
-## Upgrade this development candidate
+Version 0.1.1 fixes a Website row-parser compatibility issue discovered during the first HACS-installed real-device test. Redacted diagnostics distinguish these structural failures without exposing row contents:
 
-Download the target branch ZIP and replace the entire `custom_components/tanita_healthplanet` directory. Restart Home Assistant. Existing v1 Website entries migrate to Website-only without password re-entry; use Reconfigure to upgrade to Hybrid. Existing Official entries need reauthentication to grant the new sphygmomanometer scope.
+- `website_record_timestamp_missing`: no valid timestamp candidate was found.
+- `website_record_timestamp_ambiguous`: more than one valid timestamp/value role assignment remains.
+- `website_record_fields_invalid`: a timestamp role exists, but the other field is not a valid numeric measurement.
+
+The optional `row_length`, candidate counts, assignment count, and `field_type_shape` diagnostics contain only structural types and counts. Do not share raw rows to investigate these errors.
+
+## Upgrade through HACS
+
+Use Home Assistant's normal update entity or HACS update action for the published release, then restart Home Assistant if requested. Do not use Redownload or manually overwrite `custom_components` when testing update detection. Existing Website entries and stored credentials remain in place. Existing v1 Website entries migrate to Website-only without password re-entry; use Reconfigure to upgrade to Hybrid. Existing Official entries need reauthentication to grant the new sphygmomanometer scope.
 
 ## Reporting a problem
 

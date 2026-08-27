@@ -514,6 +514,11 @@ class WebsiteApiClient:
                     error_id=error_id,
                     row_count=len(rows) if isinstance(rows, list) else None,
                     timestamp_parsing_success=False,
+                    row_length=error.row_length,
+                    timestamp_candidate_count=error.timestamp_candidate_count,
+                    numeric_candidate_count=error.numeric_candidate_count,
+                    valid_assignment_count=error.valid_assignment_count,
+                    field_type_shape=error.field_type_shape,
                 )
                 continue
             finally:

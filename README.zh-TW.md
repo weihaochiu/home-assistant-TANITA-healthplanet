@@ -1,6 +1,8 @@
 # TANITA HealthPlanet Home Assistant 整合
 
-這是 HACS 相容 custom integration 的 v0.1.0 候選版，採用 **Official-first Hybrid（官方優先混合）**架構：官方 API 對其支援的資料具有唯一所有權；使用者明確啟用後，實驗性 Website source 只補齊官方 API 沒有的項目。
+這是 HACS 相容 custom integration v0.1.1，採用 **Official-first Hybrid（官方優先混合）**架構：官方 API 對其支援的資料具有唯一所有權；使用者明確啟用後，實驗性 Website source 只補齊官方 API 沒有的項目。
+
+v0.1.1 修正第一次 HACS 實機測試發現的 Website row parser 相容性問題，以唯一合法配對判定 timestamp 與 measurement 欄位，擴充嚴格 timestamp 格式支援；未公開的 Website source 仍維持實驗性。
 
 ## 安裝
 
@@ -49,7 +51,7 @@ Website endpoint 需要登入但未公開，可能隨時改版、失效或被封
 
 ## 手動安裝與設定
 
-目前沒有 release 或 tag。實機測試請下載此分支 ZIP，完整替換 Home Assistant 中的 `custom_components/tanita_healthplanet` 資料夾，不要混用舊候選版檔案。重新啟動後，到「設定 → 裝置與服務 → 新增整合 → TANITA HealthPlanet」。
+建議透過 HACS 安裝並由已發布的 GitHub Release 更新。只有手動復原或開發時才下載目標 release/source archive，完整替換 Home Assistant 中的 `custom_components/tanita_healthplanet` 資料夾，不要混用不同版本檔案。重新啟動後，到「設定 → 裝置與服務 → 新增整合 → TANITA HealthPlanet」。
 
 Official 或 Hybrid 模式需先在「設定 → 裝置與服務 → Application Credentials」加入 HealthPlanet API application 的 client ID 與 client secret，並向 HealthPlanet 登記 redirect URI：
 

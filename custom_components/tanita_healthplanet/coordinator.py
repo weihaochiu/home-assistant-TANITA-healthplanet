@@ -101,13 +101,20 @@ class SourceCoordinator(DataUpdateCoordinator[ProviderSnapshot]):
                 status.error_id,
                 status.row_count,
                 status.timestamp_parsing_success,
+                status.row_length,
+                status.timestamp_candidate_count,
+                status.numeric_candidate_count,
+                status.valid_assignment_count,
+                status.field_type_shape,
             )
             self._warn_once(
                 key,
                 signature,
                 "HealthPlanet source update failed: source=%s kind=%s outcome=%s "
                 "http_status=%s content_category=%s backend_code=%s error_id=%s "
-                "row_count=%s timestamp_parsing_success=%s",
+                "row_count=%s timestamp_parsing_success=%s row_length=%s "
+                "timestamp_candidate_count=%s numeric_candidate_count=%s "
+                "valid_assignment_count=%s field_type_shape=%s",
                 self.source,
                 kind,
                 status.outcome,
@@ -117,6 +124,11 @@ class SourceCoordinator(DataUpdateCoordinator[ProviderSnapshot]):
                 status.error_id,
                 status.row_count,
                 status.timestamp_parsing_success,
+                status.row_length,
+                status.timestamp_candidate_count,
+                status.numeric_candidate_count,
+                status.valid_assignment_count,
+                status.field_type_shape,
             )
         for key in tuple(self._logged_failures):
             if key.startswith("kind:") and key not in active:

@@ -13,6 +13,7 @@ from custom_components.tanita_healthplanet.parser import (
     parse_jst_timestamp,
     parse_official_payload,
     parse_website_payload,
+    parse_website_payload_result,
 )
 from research.healthplanet_web.parser import parse_graph_payload
 
@@ -90,6 +91,95 @@ def test_production_parser_accepts_research_timestamp_variants(timestamp):
 
 
 @pytest.mark.parametrize(
+    "timestamp",
+    [
+        "20990102",
+        SYNTHETIC_TIMESTAMP_12,
+        SYNTHETIC_TIMESTAMP_14,
+        "2099-01-02T03:04:05+09:00",
+        "2099/01/02 03:04",
+        "2099/01/02 03:04:05",
+        "2099-01-02 03:04",
+        "2099-01-02 03:04:05",
+        "2099/01/02 03:04:05.125",
+        "2099-01-02 03:04:05.125",
+        4071035040,
+        4071035040000,
+        "4071035040",
+        "4071035040000",
+    ],
+)
+def test_website_timestamp_representation_matrix(timestamp):
+    assert len(parse_website_payload(website_payload(value="70.25", timestamp=timestamp), 1)) == 1
+
+
+@pytest.mark.parametrize("not_timestamp", ["70", "20.5", "1500"])
+def test_short_numeric_measurements_are_not_timestamps(not_timestamp):
+    assert parse_jst_timestamp(not_timestamp) is None
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        ["70.25", 4071035040],
+        [4071035040, "70.25"],
+        ["70.25", "4071035040"],
+        ["4071035040", "70.25"],
+    ],
+)
+def test_numeric_and_numeric_string_roles_are_resolved_by_unique_assignment(row):
+    payload = website_payload()
+    payload["value1"] = [row]
+    assert [item.value for item in parse_website_payload(payload, 1)] == [70.25]
+
+
+@pytest.mark.parametrize("kind", [1, 2, 3, 4, 5, 6, 7, 14, 22])
+def test_six_row_real_device_derived_synthetic_regression(kind):
+    payload = website_payload()
+    payload["value1"] = [[kind + index / 10, f"2099010203{index:02d}"] for index in range(6)]
+    result = parse_website_payload_result(payload, kind)
+    assert len(result.measurements) == 6
+    assert result.row_count == 6
+    assert result.timestamp_parsing_success is True
+
+
+def test_zero_timestamp_candidate_is_missing_not_ambiguous():
+    payload = website_payload()
+    payload["value1"] = [["70.25", "synthetic-not-a-timestamp"]]
+    with pytest.raises(HealthPlanetSchemaError) as error:
+        parse_website_payload(payload, 1)
+    assert str(error.value) == "website_record_timestamp_missing"
+    assert error.value.timestamp_candidate_count == 0
+    assert error.value.numeric_candidate_count == 1
+    assert error.value.valid_assignment_count == 0
+    assert error.value.field_type_shape == ("string", "string")
+
+
+def test_two_valid_role_assignments_remain_strictly_ambiguous():
+    payload = website_payload()
+    payload["value1"] = [[4071035040, 4071035100]]
+    with pytest.raises(HealthPlanetSchemaError) as error:
+        parse_website_payload(payload, 1)
+    assert str(error.value) == "website_record_timestamp_ambiguous"
+    assert error.value.timestamp_candidate_count == 2
+    assert error.value.numeric_candidate_count == 2
+    assert error.value.valid_assignment_count == 2
+    assert error.value.field_type_shape == ("number", "number")
+
+
+def test_known_timestamp_with_invalid_counterpart_is_fields_invalid():
+    payload = website_payload()
+    payload["value1"] = [[SYNTHETIC_TIMESTAMP_12, {"synthetic": True}]]
+    with pytest.raises(HealthPlanetSchemaError) as error:
+        parse_website_payload(payload, 1)
+    assert str(error.value) == "website_record_fields_invalid"
+    assert error.value.timestamp_candidate_count == 1
+    assert error.value.numeric_candidate_count == 1
+    assert error.value.valid_assignment_count == 0
+    assert error.value.field_type_shape == ("string", "object")
+
+
+@pytest.mark.parametrize(
     "row",
     [
         [70.0, SYNTHETIC_TIMESTAMP_12],
@@ -109,7 +199,15 @@ def test_research_and_production_parsers_agree_on_confirmed_synthetic_schema(row
 
 @pytest.mark.parametrize(
     "row",
-    [[70.0], [70.0, SYNTHETIC_TIMESTAMP_12, "extra"], {"value": 70.0}],
+    [
+        [70.0],
+        [70.0, SYNTHETIC_TIMESTAMP_12, "extra"],
+        {"value": 70.0},
+        [True, SYNTHETIC_TIMESTAMP_12],
+        [float("nan"), SYNTHETIC_TIMESTAMP_12],
+        [float("inf"), SYNTHETIC_TIMESTAMP_12],
+        [["nested"], SYNTHETIC_TIMESTAMP_12],
+    ],
 )
 def test_unknown_website_record_shape_is_rejected(row):
     payload = website_payload()

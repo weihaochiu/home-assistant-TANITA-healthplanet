@@ -84,6 +84,10 @@ def test_actual_observed_schema_fixture_is_marked_synthetic_and_parsed():
         ("2026-01-02T03:04:05+09:00", 2026, 4),
         (1767290640, 2026, 4),
         (1767290640000, 2026, 4),
+        ("1767290640", 2026, 4),
+        ("1767290640000", 2026, 4),
+        ("2026/01/02 03:04:05.125", 2026, 4),
+        ("2026-01-02 03:04:05.125", 2026, 4),
     ],
 )
 def test_timestamp_variants_and_timezone(timestamp, year, minute):
@@ -120,6 +124,22 @@ def test_missing_value_inside_row_is_skipped():
     result = parse_graph_payload(payload, 1)
     assert result.measurements == ()
     assert result.skipped_records == 1
+
+
+def test_research_parser_rejects_true_role_ambiguity():
+    payload = synthetic_payload()
+    payload["value1"] = [[4071035040, 4071035100]]
+    with pytest.raises(SchemaDriftError) as error:
+        parse_graph_payload(payload, 1)
+    assert str(error.value) == "RECORD_TIMESTAMP_AMBIGUOUS"
+
+
+def test_research_parser_requires_exactly_two_fields():
+    payload = synthetic_payload()
+    payload["value1"] = [[70.0, "202601020304", "extra"]]
+    with pytest.raises(SchemaDriftError) as error:
+        parse_graph_payload(payload, 1)
+    assert str(error.value) == "RECORD_SHAPE_CHANGED"
 
 
 def test_empty_dataset_is_valid():

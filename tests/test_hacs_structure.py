@@ -35,11 +35,11 @@ def test_required_hacs_integration_files_exist():
         assert (ROOT / relative).is_file()
 
 
-def test_manifest_and_hacs_metadata_are_pinned_for_v010():
+def test_manifest_and_hacs_metadata_are_pinned_for_v011():
     manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     assert manifest["domain"] == "tanita_healthplanet"
-    assert manifest["version"] == "0.1.0"
+    assert manifest["version"] == "0.1.1"
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"
     assert hacs["homeassistant"] == "2026.8.0"

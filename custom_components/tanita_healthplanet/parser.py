@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -24,13 +25,31 @@ from .models import Measurement
 
 _JST = ZoneInfo(JST_TIMEZONE)
 _WEBSITE_TIMESTAMP_FORMATS = (
-    "%Y%m%d%H%M",
-    "%Y%m%d%H%M%S",
-    "%Y/%m/%d %H:%M",
-    "%Y/%m/%d %H:%M:%S",
-    "%Y-%m-%d %H:%M",
-    "%Y-%m-%d %H:%M:%S",
+    (re.compile(r"\d{8}"), "%Y%m%d"),
+    (re.compile(r"\d{12}"), "%Y%m%d%H%M"),
+    (re.compile(r"\d{14}"), "%Y%m%d%H%M%S"),
+    (re.compile(r"\d{4}/\d{2}/\d{2}"), "%Y/%m/%d"),
+    (re.compile(r"\d{4}-\d{2}-\d{2}"), "%Y-%m-%d"),
+    (re.compile(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}"), "%Y/%m/%d %H:%M"),
+    (
+        re.compile(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}"),
+        "%Y/%m/%d %H:%M:%S",
+    ),
+    (
+        re.compile(r"\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6}"),
+        "%Y/%m/%d %H:%M:%S.%f",
+    ),
+    (re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}"), "%Y-%m-%d %H:%M"),
+    (
+        re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"),
+        "%Y-%m-%d %H:%M:%S",
+    ),
+    (
+        re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{1,6}"),
+        "%Y-%m-%d %H:%M:%S.%f",
+    ),
 )
+_NUMERIC_EPOCH_STRING = re.compile(r"(?:\d{10}|\d{13})")
 _SAFE_KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]{0,63}$")
 _SENSITIVE_KEY_MARKERS = (
     "account",
@@ -81,36 +100,54 @@ def _numeric(value: Any) -> float | int | None:
     return int(parsed) if parsed.is_integer() and "." not in candidate else parsed
 
 
+def _parse_unix_timestamp(value: int | float) -> datetime | None:
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    absolute = abs(value)
+    seconds: int | float
+    if 1_000_000_000_000 <= absolute < 100_000_000_000_000:
+        seconds = value / 1000
+    elif 1_000_000_000 <= absolute < 100_000_000_000:
+        seconds = value
+    else:
+        return None
+    try:
+        return datetime.fromtimestamp(seconds, tz=UTC)
+    except (OSError, OverflowError, ValueError):
+        return None
+
+
 def parse_jst_timestamp(value: Any) -> datetime | None:
     """Parse a website or official timestamp as JST and return UTC."""
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int | float):
-        absolute = abs(value)
-        if 1_000_000_000_000 <= absolute < 100_000_000_000_000:
-            return datetime.fromtimestamp(value / 1000, tz=UTC)
-        if 1_000_000_000 <= absolute < 100_000_000_000:
-            return datetime.fromtimestamp(value, tz=UTC)
-        return None
+        return _parse_unix_timestamp(value)
     if not isinstance(value, str):
         return None
     candidate = value.strip()
     if not candidate or candidate == "-":
         return None
-    normalized = candidate[:-1] + "+00:00" if candidate.endswith("Z") else candidate
-    try:
-        parsed = datetime.fromisoformat(normalized)
-    except ValueError:
-        parsed = None
-    if parsed is not None:
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=_JST)
-        return parsed.astimezone(UTC)
-    for format_string in _WEBSITE_TIMESTAMP_FORMATS:
+    # Calendar-shaped digit strings must be resolved before numeric epoch
+    # strings so compact local datetimes can never be interpreted as Unix time.
+    for shape, format_string in _WEBSITE_TIMESTAMP_FORMATS:
+        if shape.fullmatch(candidate) is None:
+            continue
         try:
             return datetime.strptime(candidate, format_string).replace(tzinfo=_JST).astimezone(UTC)
         except ValueError:
             continue
+    parsed = None
+    if not candidate.isdigit():
+        normalized = candidate[:-1] + "+00:00" if candidate.endswith("Z") else candidate
+        with suppress(ValueError):
+            parsed = datetime.fromisoformat(normalized)
+    if parsed is not None:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=_JST)
+        return parsed.astimezone(UTC)
+    if _NUMERIC_EPOCH_STRING.fullmatch(candidate):
+        return _parse_unix_timestamp(int(candidate))
     return None
 
 
@@ -154,6 +191,85 @@ def _missing(value: Any) -> bool:
     return value is None or (isinstance(value, str) and value.strip() in {"", "-"})
 
 
+def _field_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int | float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list | tuple):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "other"
+
+
+def _row_schema_error(
+    error_id: str,
+    row: Any,
+    *,
+    timestamp_candidate_count: int | None = None,
+    numeric_candidate_count: int | None = None,
+    valid_assignment_count: int | None = None,
+) -> HealthPlanetSchemaError:
+    fields = row if isinstance(row, list | tuple) else (row,)
+    return HealthPlanetSchemaError(
+        error_id,
+        row_length=len(row) if isinstance(row, list | tuple) else None,
+        timestamp_candidate_count=timestamp_candidate_count,
+        numeric_candidate_count=numeric_candidate_count,
+        valid_assignment_count=valid_assignment_count,
+        field_type_shape=tuple(_field_type(field) for field in fields),
+    )
+
+
+def _parse_website_row(row: Any) -> tuple[datetime, float | int] | None:
+    """Return the only valid timestamp/value role assignment for one row."""
+    if _missing(row):
+        return None
+    if not isinstance(row, list) or len(row) != 2:
+        raise _row_schema_error("website_record_shape_changed", row)
+    if all(_missing(item) for item in row):
+        return None
+
+    timestamps = [
+        (index, parsed_timestamp)
+        for index, item in enumerate(row)
+        if (parsed_timestamp := parse_jst_timestamp(item)) is not None
+    ]
+    numerics = [
+        (index, parsed_numeric)
+        for index, item in enumerate(row)
+        if (parsed_numeric := _numeric(item)) is not None
+    ]
+    assignments = [
+        (measured_at, value)
+        for timestamp_index, measured_at in timestamps
+        for value_index, value in numerics
+        if timestamp_index != value_index
+    ]
+    metadata = {
+        "timestamp_candidate_count": len(timestamps),
+        "numeric_candidate_count": len(numerics),
+        "valid_assignment_count": len(assignments),
+    }
+    if len(assignments) == 1:
+        return assignments[0]
+    if len(assignments) > 1:
+        raise _row_schema_error("website_record_timestamp_ambiguous", row, **metadata)
+    if not timestamps:
+        raise _row_schema_error("website_record_timestamp_missing", row, **metadata)
+
+    timestamp_indexes = {index for index, _parsed in timestamps}
+    counterpart_indexes = {1 - index for index in timestamp_indexes}
+    if counterpart_indexes and all(_missing(row[index]) for index in counterpart_indexes):
+        return None
+    raise _row_schema_error("website_record_fields_invalid", row, **metadata)
+
+
 def parse_website_payload_result(payload: Any, kind: int) -> WebsiteParseResult:
     """Parse a two-field number/timestamp row by its confirmed field types."""
     description = METRICS.get(kind)
@@ -176,27 +292,12 @@ def parse_website_payload_result(payload: Any, kind: int) -> WebsiteParseResult:
     measurements: list[Measurement] = []
     timestamp_attempted = False
     for row in rows:
-        if _missing(row):
+        if not _missing(row):
+            timestamp_attempted = True
+        parsed_row = _parse_website_row(row)
+        if parsed_row is None:
             continue
-        if not isinstance(row, list) or len(row) != 2:
-            raise HealthPlanetSchemaError("website_record_shape_changed")
-        if all(_missing(item) for item in row):
-            continue
-        timestamps = [
-            (index, parsed)
-            for index, item in enumerate(row)
-            if (parsed := parse_jst_timestamp(item)) is not None
-        ]
-        timestamp_attempted = True
-        if len(timestamps) != 1:
-            raise HealthPlanetSchemaError("website_record_timestamp_ambiguous")
-        timestamp_index, measured_at = timestamps[0]
-        raw_value = row[1 - timestamp_index]
-        value = _numeric(raw_value)
-        if _missing(raw_value):
-            continue
-        if value is None or measured_at is None:
-            raise HealthPlanetSchemaError("website_record_fields_invalid")
+        measured_at, value = parsed_row
         measurements.append(
             Measurement(
                 metric_key=description.key,

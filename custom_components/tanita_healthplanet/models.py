@@ -49,6 +49,11 @@ class KindStatus:
     error_id: str | None = None
     row_count: int | None = None
     timestamp_parsing_success: bool | None = None
+    row_length: int | None = None
+    timestamp_candidate_count: int | None = None
+    numeric_candidate_count: int | None = None
+    valid_assignment_count: int | None = None
+    field_type_shape: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

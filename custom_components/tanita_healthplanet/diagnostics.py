@@ -43,6 +43,11 @@ def _website_statuses(coordinator: Any) -> list[dict[str, Any]]:
             "error_id": status.error_id,
             "row_count": status.row_count,
             "timestamp_parsing_success": status.timestamp_parsing_success,
+            "row_length": status.row_length,
+            "timestamp_candidate_count": status.timestamp_candidate_count,
+            "numeric_candidate_count": status.numeric_candidate_count,
+            "valid_assignment_count": status.valid_assignment_count,
+            "field_type_shape": list(status.field_type_shape),
         }
         for status in (statuses[kind] for kind in sorted(statuses))
     ]

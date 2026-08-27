@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
 
@@ -261,6 +262,57 @@ async def test_first_nine_kinds_available_when_kind_23_is_null(monkeypatch):
         **dict.fromkeys(WEBSITE_KINDS[:-1], "available"),
         23: "null",
     }
+
+
+@pytest.mark.asyncio
+async def test_primary_kinds_accept_six_numeric_string_timestamp_rows(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0
+    )
+    client._authenticated = True
+
+    async def fake_request(method, url, **kwargs):
+        kind = kwargs["params"]["kind"]
+        rows: list[Any] = (
+            [None]
+            if kind == 23
+            else [[f"{kind + index / 10:.1f}", str(4071035040 + index * 60)] for index in range(6)]
+        )
+        return 200, "application/json", json.dumps({"code": [0], "value1": rows}), url
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    assert snapshot.errors == {}
+    assert all(snapshot.measurements[kind] is not None for kind in WEBSITE_KINDS[:-1])
+    assert all(snapshot.kind_statuses[kind].row_count == 6 for kind in WEBSITE_KINDS[:-1])
+    assert all(
+        snapshot.kind_statuses[kind].error_id != "website_record_timestamp_ambiguous"
+        for kind in WEBSITE_KINDS[:-1]
+    )
+
+
+@pytest.mark.asyncio
+async def test_parser_error_status_exposes_only_structural_role_metadata(monkeypatch):
+    client = WebsiteApiClient(
+        FakeSession(), login_id="synthetic", password="synthetic", request_interval=0, kinds=(1,)
+    )
+    client._authenticated = True
+
+    async def fake_request(method, url, **kwargs):
+        body = json.dumps({"code": [0], "value1": [["70.25", "not-a-timestamp"]]})
+        return 200, "application/json", body, url
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    snapshot = await client.async_fetch()
+    status = snapshot.kind_statuses[1]
+    assert status.error_id == "website_record_timestamp_missing"
+    assert status.row_length == 2
+    assert status.timestamp_candidate_count == 0
+    assert status.numeric_candidate_count == 1
+    assert status.valid_assignment_count == 0
+    assert status.field_type_shape == ("string", "string")
+    assert "70.25" not in repr(status)
+    assert "not-a-timestamp" not in repr(status)
 
 
 @pytest.mark.asyncio

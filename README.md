@@ -1,6 +1,8 @@
 # TANITA HealthPlanet for Home Assistant
 
-Development candidate for a HACS-compatible Home Assistant custom integration. Version 0.1.0 uses an **official-first hybrid** architecture: documented HealthPlanet APIs own every metric they expose, while an explicitly enabled experimental website source fills only the remaining metrics.
+HACS-compatible Home Assistant custom integration. Version 0.1.1 uses an **official-first hybrid** architecture: documented HealthPlanet APIs own every metric they expose, while an explicitly enabled experimental website source fills only the remaining metrics.
+
+Version 0.1.1 fixes Website row parsing discovered during the first HACS-installed real-device test. It resolves timestamp and measurement roles deterministically, expands strict timestamp support, and keeps the undocumented Website source experimental.
 
 ## Installation
 
@@ -47,7 +49,7 @@ The website endpoint is authenticated but undocumented. It may change or be bloc
 
 ## Manual installation and configuration
 
-No release or tag has been created. To test this branch, download its ZIP and replace the entire `custom_components/tanita_healthplanet` folder in Home Assistant; do not mix files from older candidates. Restart Home Assistant, then use **Settings → Devices & services → Add integration → TANITA HealthPlanet**.
+HACS installation and updates from the published GitHub release are recommended. For manual recovery or development only, download the target release/source archive and replace the entire `custom_components/tanita_healthplanet` folder; do not mix files from different versions. Restart Home Assistant, then use **Settings → Devices & services → Add integration → TANITA HealthPlanet**.
 
 For Official or Hybrid mode, first add HealthPlanet under **Settings → Devices & services → Application Credentials** using the client ID and client secret from your HealthPlanet API application. Register this redirect URI with HealthPlanet:
 
