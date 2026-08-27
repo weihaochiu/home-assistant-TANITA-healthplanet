@@ -82,6 +82,8 @@ def test_original_local_brand_assets_are_valid_png_files():
         height = int.from_bytes(payload[20:24], "big")
         assert (width, height) == dimensions
         assert width == height
+        assert payload[24] == 8
+        assert payload[25] == 6
         assert path.stat().st_size < 500_000
 
 
