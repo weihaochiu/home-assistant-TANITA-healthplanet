@@ -5,10 +5,13 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
+from custom_components.tanita_healthplanet.installation import DiskManifestVersion
 from custom_components.tanita_healthplanet.safe_update import (
     RESULT_BACKUP_FAILED,
     RESULT_BACKUP_TIMEOUT,
     RESULT_BUSY,
+    RESULT_INSTALLATION_DRIFT,
+    RESULT_INSTALLATION_INVALID,
     RESULT_NO_UPDATE,
     RESULT_SUCCESS,
     RESULT_UNSUPPORTED,
@@ -96,7 +99,12 @@ UPDATE_ENTITY = "update.renamed_healthplanet"
 BACKUP_ENTITY = "event.renamed_automatic_backup"
 
 
-def _manager(hass: FakeHass) -> SafeUpdateManager:
+def _manager(hass: FakeHass, disk_version_reader=None) -> SafeUpdateManager:
+    async def disk_version() -> DiskManifestVersion:
+        state = hass.states.get(UPDATE_ENTITY)
+        version = state.attributes.get("installed_version") if state else None
+        return DiskManifestVersion(version if isinstance(version, str) else None)
+
     return SafeUpdateManager(
         hass,  # type: ignore[arg-type]
         backup_start_timeout=0.02,
@@ -105,6 +113,7 @@ def _manager(hass: FakeHass) -> SafeUpdateManager:
         restart_delay=0,
         update_entity_resolver=lambda: UPDATE_ENTITY,
         backup_entity_resolver=lambda: BACKUP_ENTITY,
+        disk_version_reader=disk_version_reader or disk_version,
     )
 
 
@@ -174,6 +183,44 @@ async def test_no_update_does_not_backup_install_or_restart():
     assert await _manager(hass).async_run(restart_after_update=True) == RESULT_NO_UPDATE
     assert ("backup", "create_automatic") not in _actions(hass)
     assert ("update", "install") not in _actions(hass)
+    assert ("homeassistant", "restart") not in _actions(hass)
+
+
+async def test_preflight_hacs_disk_drift_and_invalid_manifest_fail_closed():
+    hass = FakeHass()
+    _initial_states(hass)
+    drift = _manager(hass, lambda: _async_disk("0.1.1"))
+    assert await drift.async_run(restart_after_update=True) == RESULT_INSTALLATION_DRIFT
+    assert drift.last_error_id == "hacs_metadata_disk_version_mismatch"
+    assert ("backup", "create_automatic") not in _actions(hass)
+
+    invalid = _manager(
+        hass,
+        lambda: _async_disk_result(DiskManifestVersion(None, "installation_manifest_invalid")),
+    )
+    assert await invalid.async_run(restart_after_update=True) == RESULT_INSTALLATION_INVALID
+    assert ("backup", "create_automatic") not in _actions(hass)
+
+
+async def test_post_install_disk_mismatch_never_restarts():
+    hass = FakeHass()
+    _initial_states(hass)
+    versions = iter((DiskManifestVersion("0.2.1"), DiskManifestVersion("0.2.1")))
+
+    async def disk_version():
+        return next(versions)
+
+    async def backup_hook() -> None:
+        _schedule_backup(hass)
+
+    async def update_hook() -> None:
+        _schedule_update(hass)
+
+    hass.services.hooks[("backup", "create_automatic")] = backup_hook
+    hass.services.hooks[("update", "install")] = update_hook
+    manager = _manager(hass, disk_version)
+    assert await manager.async_run(restart_after_update=True) == RESULT_UPDATE_FAILED
+    assert manager.last_error_id == "installation_version_mismatch"
     assert ("homeassistant", "restart") not in _actions(hass)
 
 
@@ -332,6 +379,7 @@ async def test_hacs_unavailable_is_isolated_and_clean():
         hass,  # type: ignore[arg-type]
         update_entity_resolver=lambda: None,
         backup_entity_resolver=lambda: BACKUP_ENTITY,
+        disk_version_reader=lambda: _async_disk("0.2.1"),
     )
     assert await manager.async_run(restart_after_update=True) == RESULT_UNSUPPORTED
     assert ("backup", "create_automatic") not in _actions(hass)
@@ -376,3 +424,11 @@ def test_repository_discovery_matches_only_the_exact_public_release_url():
     assert not match(
         "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet-malicious/releases/v0.2.2"
     )
+
+
+async def _async_disk(version: str) -> DiskManifestVersion:
+    return DiskManifestVersion(version)
+
+
+async def _async_disk_result(result: DiskManifestVersion) -> DiskManifestVersion:
+    return result

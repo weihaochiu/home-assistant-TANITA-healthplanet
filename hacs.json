@@ -1,4 +1,6 @@
 {
   "homeassistant": "2026.8.0",
-  "name": "HealthPlanet for Home Assistant"
+  "name": "HealthPlanet for Home Assistant",
+  "zip_release": true,
+  "filename": "healthplanet_for_home_assistant.zip"
 }

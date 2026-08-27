@@ -99,7 +99,35 @@ async def test_history_failure_isolated_and_redacted(caplog):
     status = await manager.async_sync(force=True)
     assert status.result == "failed"
     assert "synthetic private provider detail" not in caplog.text
-    assert "history_sync_failed" in caplog.text
+    assert "history_source_failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_five_seen_import_failure_keeps_imported_zero_and_reports_stage(caplog):
+    rows = tuple(measurement(1, 60.0 + index, index, SOURCE_OFFICIAL) for index in range(5))
+    snapshot = ProviderSnapshot(measurements={1: rows[-1]}, history={1: rows})
+
+    def fail_import(hass, metadata, stats):
+        raise RuntimeError("synthetic private recorder detail")
+
+    manager = HistorySyncManager(
+        SimpleNamespace(),
+        SimpleNamespace(entry_id="0123456789abcdef", options={}),
+        RuntimeData(
+            official_provider=SimpleNamespace(
+                async_fetch_history=lambda days: _async_value(snapshot)
+            )
+        ),
+        importer=fail_import,
+    )
+    status = await manager.async_sync(force=True)
+    assert status.records_seen == 5
+    assert status.records_imported == 0
+    assert status.result == "failed"
+    assert status.failure_stage == "recorder_import"
+    assert status.error_id == "history_recorder_import_failed"
+    assert status.error_type == "RuntimeError"
+    assert "synthetic private recorder detail" not in caplog.text
 
 
 async def _async_value(value):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -20,7 +20,9 @@ from .const import (
     SAFE_UPDATE_BACKUP_START_TIMEOUT_SECONDS,
     SAFE_UPDATE_INSTALL_TIMEOUT_SECONDS,
     SAFE_UPDATE_RESTART_DELAY_SECONDS,
+    VERSION,
 )
+from .installation import ActualInstalledVersionVerifier, DiskManifestVersion
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -39,6 +41,8 @@ RESULT_UPDATE_TIMEOUT = "update_timeout"
 RESULT_UNSUPPORTED = "unsupported"
 RESULT_BUSY = "busy"
 RESULT_RESTART_FAILED = "restart_failed"
+RESULT_INSTALLATION_DRIFT = "installation_drift"
+RESULT_INSTALLATION_INVALID = "installation_invalid"
 
 STAGE_IDLE = "idle"
 STAGE_RESOLVING = "resolving"
@@ -145,6 +149,7 @@ class SafeUpdateManager:
         restart_delay: float = SAFE_UPDATE_RESTART_DELAY_SECONDS,
         update_entity_resolver: Callable[[], str | None] | None = None,
         backup_entity_resolver: Callable[[], str | None] | None = None,
+        disk_version_reader: Callable[[], Awaitable[DiskManifestVersion]] | None = None,
     ) -> None:
         self.hass = hass
         self._lock = asyncio.Lock()
@@ -155,9 +160,33 @@ class SafeUpdateManager:
         self._restart_delay = restart_delay
         self._update_entity_resolver = update_entity_resolver
         self._backup_entity_resolver = backup_entity_resolver
+        self._disk_version_reader = (
+            disk_version_reader or ActualInstalledVersionVerifier(hass).async_read
+        )
         self.last_result: str | None = None
         self.last_stage = STAGE_IDLE
         self.last_completed_at: datetime | None = None
+        self.runtime_version = VERSION
+        self.disk_version: str | None = None
+        self.hacs_installed_version: str | None = None
+        self.hacs_latest_version: str | None = None
+        self.version_consistent = False
+        self.last_error_id: str | None = None
+
+    async def _async_capture_versions(self, state: State | None) -> DiskManifestVersion:
+        disk = await self._disk_version_reader()
+        self.disk_version = disk.version
+        installed = state.attributes.get("installed_version") if state else None
+        latest = state.attributes.get("latest_version") if state else None
+        self.hacs_installed_version = installed if isinstance(installed, str) else None
+        self.hacs_latest_version = latest if isinstance(latest, str) else None
+        self.version_consistent = (
+            disk.error_id is None
+            and disk.version is not None
+            and self.hacs_installed_version is not None
+            and disk.version == self.hacs_installed_version
+        )
+        return disk
 
     @property
     def running(self) -> bool:
@@ -423,6 +452,22 @@ class SafeUpdateManager:
                     "automatically. Restart it manually."
                 )
             ),
+            RESULT_INSTALLATION_DRIFT: (
+                "HACS 顯示的 HealthPlanet 版本與實際安裝檔案不一致；安全更新未開始。"
+                if chinese
+                else (
+                    "The HealthPlanet version reported by HACS does not match the "
+                    "installed files. Safe Update was not started."
+                )
+            ),
+            RESULT_INSTALLATION_INVALID: (
+                "無法安全驗證 HealthPlanet 實際安裝檔案；安全更新未開始。"
+                if chinese
+                else (
+                    "The installed HealthPlanet files could not be verified safely. "
+                    "Safe Update was not started."
+                )
+            ),
             RESULT_SUCCESS: (
                 "HealthPlanet 已成功更新。請重新啟動 Home Assistant 以載入新版本。"
                 if chinese
@@ -432,6 +477,21 @@ class SafeUpdateManager:
                 )
             ),
         }
+        if result == RESULT_UPDATE_FAILED and self.last_error_id in {
+            "installation_version_mismatch",
+            "installation_manifest_missing",
+            "installation_manifest_invalid",
+        }:
+            messages[RESULT_UPDATE_FAILED] = (
+                "HACS 顯示 HealthPlanet 已更新，但實際安裝檔案版本不一致。"
+                "Home Assistant 未重新啟動。請檢查 HACS 安裝狀態。"
+                if chinese
+                else (
+                    "HACS reports HealthPlanet as updated, but the installed-file "
+                    "version does not match. Home Assistant was not restarted. "
+                    "Check the HACS installation status."
+                )
+            )
         try:
             await self.hass.services.async_call(
                 "persistent_notification",
@@ -455,6 +515,7 @@ class SafeUpdateManager:
             return RESULT_BUSY
 
         async with self._lock:
+            self.last_error_id = None
             self._set_stage(STAGE_RESOLVING)
             update_entity = self.resolve_update_entity()
             if update_entity is None:
@@ -464,6 +525,15 @@ class SafeUpdateManager:
             if update_state is None or update_state.state in {"unknown", "unavailable"}:
                 await self._notify(RESULT_UNSUPPORTED, context)
                 return self._finish(RESULT_UNSUPPORTED)
+            disk_before = await self._async_capture_versions(update_state)
+            if disk_before.error_id is not None:
+                self.last_error_id = disk_before.error_id
+                await self._notify(RESULT_INSTALLATION_INVALID, context)
+                return self._finish(RESULT_INSTALLATION_INVALID)
+            if not self.version_consistent:
+                self.last_error_id = "hacs_metadata_disk_version_mismatch"
+                await self._notify(RESULT_INSTALLATION_DRIFT, context)
+                return self._finish(RESULT_INSTALLATION_DRIFT)
             if update_state.state == "off":
                 await self._notify(RESULT_NO_UPDATE, context)
                 return self._finish(RESULT_NO_UPDATE, STAGE_COMPLETED)
@@ -544,6 +614,12 @@ class SafeUpdateManager:
                 installed.state != "off"
                 or installed.attributes.get("installed_version") != expected_version
             ):
+                await self._notify(RESULT_UPDATE_FAILED, context)
+                return self._finish(RESULT_UPDATE_FAILED)
+
+            disk_after = await self._async_capture_versions(installed)
+            if disk_after.error_id is not None or disk_after.version != expected_version:
+                self.last_error_id = disk_after.error_id or "installation_version_mismatch"
                 await self._notify(RESULT_UPDATE_FAILED, context)
                 return self._finish(RESULT_UPDATE_FAILED)
 

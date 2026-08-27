@@ -19,13 +19,11 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import HealthPlanetConfigEntry, _entry_mode
 from .const import (
-    DOMAIN,
     METRICS,
     MODE_HYBRID,
     MODE_OFFICIAL_ONLY,
@@ -37,6 +35,7 @@ from .const import (
     WEBSITE_KINDS,
 )
 from .coordinator import SourceCoordinator
+from .device_info import healthplanet_device_info
 from .models import Measurement, ProviderSnapshot
 
 
@@ -61,11 +60,11 @@ def _description(kind: int, source: str) -> HealthPlanetSensorDescription:
     elif kind == 14:
         unit = UnitOfTime.YEARS
     elif kind in {101, 102}:
-        # HA Core 2026.8.2 includes mmHg in UnitOfPressure and permits it
+        # HA Core 2026.8.3 includes mmHg in UnitOfPressure and permits it
         # with the generic pressure device class.
         device_class = SensorDeviceClass.PRESSURE
         unit = UnitOfPressure.MMHG
-    # HA Core 2026.8.2 has no semantically correct pulse/heart-rate
+    # HA Core 2026.8.3 has no semantically correct pulse/heart-rate
     # device class, so kind 103 intentionally keeps only bpm.
     return HealthPlanetSensorDescription(
         key=metric.key,
@@ -145,12 +144,7 @@ class HealthPlanetSensor(CoordinatorEntity[SourceCoordinator], SensorEntity):
             MODE_OFFICIAL_ONLY: "HealthPlanet Official API",
             MODE_WEBSITE_ONLY: "HealthPlanet Experimental Website",
         }[mode]
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="TANITA",
-            model=model,
-        )
+        self._attr_device_info = healthplanet_device_info(entry.entry_id, entry.title, model)
 
     @property
     def _measurement(self) -> Measurement | None:

@@ -38,6 +38,17 @@ The optional `row_length`, candidate counts, assignment count, and `field_type_s
 
 Use Home Assistant's normal update entity or HACS update action for the published release, then restart Home Assistant if requested. Do not use Redownload or manually overwrite `custom_components` when testing update detection. Existing Website entries and stored credentials remain in place. Existing v1 Website entries migrate to Website-only without password re-entry; use Reconfigure to upgrade to Hybrid. Existing Official entries need reauthentication to grant the new sphygmomanometer scope.
 
+## HACS says latest but the disk manifest is old
+
+1. Check the HACS installed and latest versions.
+2. Inspect `custom_components/tanita_healthplanet/manifest.json`.
+3. If they differ, do not assume a restart will repair the files.
+4. Use HACS **Redownload** or `healthplanet_for_home_assistant.zip` from the validated GitHub Release.
+5. Re-check the disk manifest.
+6. Restart Home Assistant only after the disk version is correct.
+
+Safe Update performs these comparisons itself and will not back up, install, claim success, or restart across an unexplained preflight drift. A post-install mismatch always blocks restart.
+
 ## Reporting a problem
 
 Share only redacted diagnostics. Never post credentials, client secrets, OAuth codes/tokens, Cookie/Set-Cookie, CSRF tokens, raw HTML/JSON, request/response bodies, health values, measurement timestamps, or screenshots that reveal them. GitHub issues are public unless the repository explicitly says otherwise.

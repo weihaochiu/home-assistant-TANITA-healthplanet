@@ -6,12 +6,24 @@ This independently developed open-source project is not affiliated with, not end
 
 ## Install with HACS
 
+### Step 1 — Install code with HACS
+
+**Install or download the integration code with HACS:**
+
 [![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weihaochiu&repository=home-assistant-TANITA-healthplanet&category=integration)
 
 1. Install and configure [HACS](https://www.hacs.xyz/docs/use/download/download/).
 2. Open this repository in HACS and download **HealthPlanet for Home Assistant**.
-3. Restart Home Assistant.
-4. Complete **Before setup**, then add the integration.
+
+### Step 2 — Restart Home Assistant
+
+Restart only after HACS has written the expected version to `custom_components/tanita_healthplanet/manifest.json`.
+
+### Step 3 — Add/configure the integration
+
+Complete **Before setup**, then add the integration.
+
+**This button only starts Home Assistant configuration. It does not download or reinstall the integration files.**
 
 [![Add HealthPlanet for Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
 
@@ -21,15 +33,17 @@ When installed through HACS, HealthPlanet for Home Assistant includes a native, 
 
 Before using it, configure **Settings → System → Backups**. Safe Update uses those existing automatic-backup contents, locations, encryption/password, and retention settings. When pressed, it:
 
-1. resolves the HealthPlanet HACS update entity through Home Assistant's public registries and confirms an update is available;
+1. resolves the HealthPlanet HACS update entity, reads the disk manifest through Home Assistant's config path, rejects version drift, and confirms an update is available;
 2. calls `backup.create_automatic` and proves a new backup entered `in_progress` before accepting a later `completed` event;
 3. calls the standard `update.install` action without a native `backup` flag;
-4. verifies that the entity is no longer updating and that `installed_version` equals the captured target version;
+4. verifies both HACS `installed_version` and the disk manifest equal the captured target version;
 5. optionally calls `homeassistant.restart` (enabled by default).
 
 If automatic discovery is unavailable, open the integration's **Configure** options once and select its HACS update entity. This fallback stores the entity's HACS registry identity, so renaming the entity does not hard-code its old entity ID. The restart preference is also available in Configure and applies installation-wide.
 
 Backup failure or timeout always blocks installation. Update failure or timeout always blocks restart. Safe Update restarts Home Assistant Core only; it never reboots the Home Assistant OS host. HACS remains responsible for repository download/install and its own rollback behavior. HACS repository update entities may not expose Home Assistant's native “Back up before updating” checkbox, so this integration creates and verifies the Home Assistant backup before invoking HACS.
+
+Detecting a HACS update never starts backup, installation, or restart. Only an explicit press of **Safe update HealthPlanet** can do that. If HACS metadata and the disk manifest disagree before or after installation, Safe Update fails closed and never restarts Home Assistant.
 
 Bootstrap note: v0.2.0 does not contain this code. The one-time v0.2.0 → v0.2.1 upgrade still uses the normal HACS update flow followed by a manual Home Assistant restart. Native Safe Update can then handle v0.2.1 → v0.2.2 and later updates.
 
@@ -86,6 +100,7 @@ Devices are named `HealthPlanet - {family member}`. Entity unique IDs remain `{e
 - `measurement_time` on each current sensor is the exact provider measurement timestamp.
 - Home Assistant owns state `last_updated`; the integration never changes it or writes directly to Recorder tables.
 - Recorder's supported external statistics import is hourly. Multiple measurements in one UTC hour produce arithmetic `mean`, `min`, and `max`; it does not pretend to provide exact-minute native state history.
+- Home Assistant 2026.8 reserves native entity statistic imports for Recorder itself. Synced HealthPlanet history is therefore available in the standard **Statistics Graph** card by its `HealthPlanet …` statistic name; it is not forged into the state-based History panel.
 - Repeated setup, reload, refresh, or manual sync is idempotent through stable source/kind/time identities and Recorder's update-by-hour import behavior. No duplicate history JSON is stored in `.storage`.
 
 History import is a separate failure domain: Recorder or history-provider failures never make current sensors unavailable.
@@ -106,7 +121,8 @@ Diagnostics include source outcomes, structural row counts, safe sync counters, 
 - Official unavailable: use Reauth; Website complementary sensors remain independent.
 - Website unavailable: check Website credentials; official sensors remain independent.
 - Historical sync failed: current sensors continue; retry with the device's **Sync history** button.
-- HA integration icon missing: restart after installing the complete v0.2.1 component, including `brand/`.
+- HACS says latest but disk is old: compare HACS installed/latest versions with `manifest.json`; use HACS **Redownload** or the validated release ZIP, re-check the disk version, and restart only after they agree.
+- HA integration icon missing: restart after installing the complete v0.2.2 component, including `brand/`.
 - HACS repository list still shows a placeholder: HA local integration branding and the HACS repository-list brand proxy are separate paths; this can be a HACS frontend limitation.
 
 See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECTURE.md) for more detail.
@@ -115,7 +131,7 @@ See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECT
 
 1. Update the manifest, `VERSION`, `USER_AGENT`, changelog, and documentation.
 2. Run the full local validation suite, push `main`, and wait for Tests, HACS, and Hassfest.
-3. Create and push an annotated stable semantic-version tag such as `v0.2.1`.
+3. Create and push an annotated stable semantic-version tag such as `v0.2.2`.
 4. GitHub Actions revalidates version consistency, tests, coverage, privacy, HACS, and Hassfest before automatically publishing the stable GitHub Release.
 5. HACS detects the published release through its normal background refresh.
 

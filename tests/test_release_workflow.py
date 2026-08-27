@@ -24,21 +24,25 @@ def test_release_workflow_has_secure_gated_release_contract():
     assert 'gh release view "$TAG"' in source
     assert 'gh release create "$TAG"' in source
     assert "--verify-tag" in source
-    assert "--generate-notes" in source
+    assert "scripts/build_release.py" in source
+    assert "release-notes.md" in source
+    assert "healthplanet_for_home_assistant.zip" in source
+    assert "SHA256SUMS.txt" in source
+    assert "--generate-notes" not in source
     assert "pull_request_target" not in source
     assert "packages: write" not in source
     assert "actions: write" not in source
     assert "id-token: write" not in source
 
 
-def test_release_metadata_matches_v021():
+def test_release_metadata_matches_v022():
     manifest = json.loads(
         (ROOT / "custom_components" / "tanita_healthplanet" / "manifest.json").read_text(
             encoding="utf-8"
         )
     )
-    assert manifest["version"] == "0.2.1"
-    assert validate_release_metadata(ROOT, "v0.2.1") == "0.2.1"
+    assert manifest["version"] == "0.2.2"
+    assert validate_release_metadata(ROOT, "v0.2.2") == "0.2.2"
 
 
 @pytest.mark.parametrize(

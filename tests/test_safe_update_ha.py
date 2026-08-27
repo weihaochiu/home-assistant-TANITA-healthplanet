@@ -7,12 +7,14 @@ import pytest
 pytest.importorskip("homeassistant")
 
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.tanita_healthplanet.button import (
     HealthPlanetSafeUpdateButton,
     async_setup_entry,
+    remove_legacy_management_device,
 )
 from custom_components.tanita_healthplanet.const import (
     CONF_HACS_UPDATE_ENTITY,
@@ -41,6 +43,30 @@ async def test_three_config_entries_create_exactly_one_repository_button(hass):
         entity for entity in entities if isinstance(entity, HealthPlanetSafeUpdateButton)
     ]
     assert len(safe_buttons) == 1
+    assert safe_buttons[0].device_info is None
+
+
+async def test_v021_management_device_is_detached_and_removed(hass):
+    entry = MockConfigEntry(domain=DOMAIN, title="Family")
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    legacy = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "integration_management")},
+        name="HealthPlanet for Home Assistant",
+    )
+    entities = er.async_get(hass)
+    safe_update = entities.async_get_or_create(
+        "button",
+        DOMAIN,
+        f"{DOMAIN}_safe_update",
+        suggested_object_id="safe_update",
+        config_entry=entry,
+        device_id=legacy.id,
+    )
+    remove_legacy_management_device(hass, safe_update.entity_id)
+    assert entities.async_get(safe_update.entity_id).device_id is None
+    assert devices.async_get(legacy.id) is None
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

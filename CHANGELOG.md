@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.2 — 2026-08-28
+
+### Reliability fixes
+
+- Verified historical imports through Home Assistant Recorder before reporting records as imported, with privacy-safe failure stages and error types.
+- Documented the supported external-statistics target and Home Assistant History-panel limitation without forging historical states.
+- Added a validated deterministic HACS release ZIP with manifest, layout, checksum, and secret-audit gates.
+- Added disk-manifest verification and explicit HACS metadata/installed-file drift detection to Safe Update.
+- Hardened manual HealthPlanet authorization-code exchange with exact success-URL parsing and allowlisted OAuth error diagnostics.
+- Added the integration software version to stable family-device metadata.
+- Removed the separate Integration Management device while retaining one installation-wide Safe Update control.
+- Clarified HACS installation, Add Integration, recovery, and generated release notes.
+
 ## 0.2.1 — 2026-08-27
 
 - Added automatic GitHub Release creation for validated semantic-version tags.

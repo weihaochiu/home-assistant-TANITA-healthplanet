@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from . import HealthPlanetConfigEntry
 from .const import DOMAIN
+from .device_info import healthplanet_device_info
 from .history import HistorySyncManager
 from .safe_update import (
     SafeUpdateManager,
@@ -16,6 +16,25 @@ from .safe_update import (
     get_safe_update_manager,
     is_management_entry,
 )
+
+
+def remove_legacy_management_device(hass: HomeAssistant, entity_id: str) -> None:
+    """Detach Safe Update and remove only the v0.2.1 management device."""
+    from homeassistant.helpers import device_registry as dr
+    from homeassistant.helpers import entity_registry as er
+
+    entities = er.async_get(hass)
+    registry_entry = entities.async_get(entity_id)
+    if registry_entry is None or registry_entry.device_id is None:
+        return
+    devices = dr.async_get(hass)
+    device = devices.async_get(registry_entry.device_id)
+    legacy_identifier = (DOMAIN, "integration_management")
+    if device is None or legacy_identifier not in device.identifiers:
+        return
+    legacy_device_id = registry_entry.device_id
+    entities.async_update_entity(entity_id, device_id=None)
+    devices.async_remove_device(legacy_device_id)
 
 
 async def async_setup_entry(
@@ -42,11 +61,8 @@ class HealthPlanetHistorySyncButton(ButtonEntity):
     def __init__(self, entry: HealthPlanetConfigEntry, manager: HistorySyncManager) -> None:
         self._manager = manager
         self._attr_unique_id = f"{entry.entry_id}_history_sync"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=entry.title,
-            manufacturer="TANITA",
-            model="HealthPlanet cloud data",
+        self._attr_device_info = healthplanet_device_info(
+            entry.entry_id, entry.title, "HealthPlanet cloud data"
         )
 
     async def async_press(self) -> None:
@@ -64,6 +80,11 @@ class HealthPlanetHistorySyncButton(ButtonEntity):
             "records_seen": status.records_seen,
             "records_imported": status.records_imported,
             "records_skipped": status.records_skipped,
+            "failure_stage": status.failure_stage,
+            "error_id": status.error_id,
+            "error_type": status.error_type,
+            "statistics_ui": "statistics_graph",
+            "statistic_ids": ",".join(status.statistic_ids),
         }
 
 
@@ -74,12 +95,6 @@ class HealthPlanetSafeUpdateButton(ButtonEntity):
     _attr_translation_key = "safe_update"
     _attr_unique_id = f"{DOMAIN}_safe_update"
     _attr_icon = "mdi:shield-refresh"
-    _attr_device_info = DeviceInfo(
-        identifiers={(DOMAIN, "integration_management")},
-        name="HealthPlanet for Home Assistant",
-        manufacturer="Independent open-source project",
-        model="Integration management",
-    )
 
     def __init__(self, hass: HomeAssistant, manager: SafeUpdateManager) -> None:
         self._hass_ref = hass
@@ -87,6 +102,7 @@ class HealthPlanetSafeUpdateButton(ButtonEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        remove_legacy_management_device(self.hass, self.entity_id)
         self.async_on_remove(self._manager.async_add_listener(self.async_write_ha_state))
 
         def _update_entity_changed(event: object) -> None:

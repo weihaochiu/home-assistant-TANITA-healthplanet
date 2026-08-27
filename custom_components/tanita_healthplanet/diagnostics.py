@@ -13,7 +13,10 @@ from .const import (
     CONF_UPDATE_INTERVAL,
     CONF_WEBSITE_UPDATE_INTERVAL,
     DEFAULT_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+    VERSION,
 )
+from .installation import ActualInstalledVersionVerifier
 from .models import EndpointStatus, ProviderSnapshot
 from .safe_update import get_safe_update_manager
 
@@ -107,7 +110,25 @@ async def async_get_config_entry_diagnostics(
             "last_completed_at": (
                 manager.last_completed_at.isoformat() if manager.last_completed_at else None
             ),
+            "runtime_version": VERSION,
+            "disk_version": manager.disk_version,
+            "hacs_installed_version": (
+                update_state.attributes.get("installed_version") if update_state else None
+            ),
+            "hacs_latest_version": (
+                update_state.attributes.get("latest_version") if update_state else None
+            ),
+            "version_consistent": manager.version_consistent,
         }
+        disk = await ActualInstalledVersionVerifier(hass).async_read()
+        result["safe_update"]["disk_version"] = disk.version
+        installed_version = result["safe_update"]["hacs_installed_version"]
+        result["safe_update"]["version_consistent"] = (
+            disk.error_id is None
+            and disk.version is not None
+            and isinstance(installed_version, str)
+            and disk.version == installed_version
+        )
     else:
         result["safe_update"] = {
             "safe_update_supported": False,
@@ -128,7 +149,16 @@ async def async_get_config_entry_diagnostics(
             "records_seen": status.records_seen,
             "records_imported": status.records_imported,
             "records_skipped": status.records_skipped,
+            "failure_stage": status.failure_stage,
+            "error_id": status.error_id,
+            "error_type": status.error_type,
+            "statistic_ids": list(status.statistic_ids),
         }
+    oauth_status = getattr(hass, "data", {}).get(DOMAIN, {}).get("oauth_status", {})
+    result["oauth"] = {
+        "last_oauth_error_id": oauth_status.get("last_oauth_error_id"),
+        "last_oauth_http_status": oauth_status.get("last_oauth_http_status"),
+    }
     if official is not None:
         statuses = getattr(official, "endpoint_statuses", {})
         result["official"] = {

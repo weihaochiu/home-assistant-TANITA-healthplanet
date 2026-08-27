@@ -5,11 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from collections.abc import Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from statistics import fmean
 
+from homeassistant.components.recorder import get_instance, statistics
 from homeassistant.components.recorder.models import (
     StatisticData,
     StatisticMeanType,
@@ -58,6 +59,10 @@ class HistorySyncStatus:
     records_seen: int = 0
     records_imported: int = 0
     records_skipped: int = 0
+    failure_stage: str | None = None
+    error_id: str | None = None
+    error_type: str | None = None
+    statistic_ids: tuple[str, ...] = ()
 
 
 def _identity(measurement: Measurement) -> tuple[int, datetime, str]:
@@ -103,6 +108,49 @@ def statistic_metadata(entry_id: str, kind: int) -> StatisticMetaData:
     )
 
 
+async def async_verify_statistics(
+    hass: HomeAssistant,
+    metadata: StatisticMetaData,
+    expected: list[StatisticData],
+) -> None:
+    """Wait for Recorder and verify the public statistics query sees every hour."""
+    instance = get_instance(hass)
+    await instance.async_add_executor_job(instance.block_till_done)
+    if not expected:
+        return
+    expected_rows = {
+        item["start"].timestamp(): (item.get("mean"), item.get("min"), item.get("max"))
+        for item in expected
+    }
+    start = min(item["start"] for item in expected)
+    end = max(item["start"] for item in expected) + timedelta(hours=1)
+    statistic_id = metadata["statistic_id"]
+    stored = await instance.async_add_executor_job(
+        statistics.statistics_during_period,
+        hass,
+        start,
+        end,
+        {statistic_id},
+        "hour",
+        None,
+        {"mean", "min", "max"},
+    )
+    actual_rows = {
+        row["start"]: (row.get("mean"), row.get("min"), row.get("max"))
+        for row in stored.get(statistic_id, [])
+    }
+    if any(actual_rows.get(start) != values for start, values in expected_rows.items()):
+        raise RuntimeError("history_recorder_verification_failed")
+
+
+async def _async_accept_import(
+    hass: HomeAssistant,
+    metadata: StatisticMetaData,
+    expected: list[StatisticData],
+) -> None:
+    """Unit-test verifier for injected synchronous importers."""
+
+
 class HistorySyncManager:
     """Synchronize provider history independently from live coordinators."""
 
@@ -115,12 +163,23 @@ class HistorySyncManager:
         importer: Callable[
             [HomeAssistant, StatisticMetaData, list[StatisticData]], None
         ] = async_add_external_statistics,
+        verifier: Callable[[HomeAssistant, StatisticMetaData, list[StatisticData]], Awaitable[None]]
+        | None = None,
     ) -> None:
         self.hass = hass
         self.entry = entry
         self.runtime = runtime
         self.status = HistorySyncStatus()
         self._importer = importer
+        self._verifier = (
+            (
+                async_verify_statistics
+                if importer is async_add_external_statistics
+                else _async_accept_import
+            )
+            if verifier is None
+            else verifier
+        )
         self._lock = asyncio.Lock()
         self._known: dict[tuple[int, datetime, str], Measurement] = {}
 
@@ -179,7 +238,10 @@ class HistorySyncManager:
                 return self.status
             started = datetime.now(UTC)
             seen = imported = skipped = 0
+            statistic_ids: list[str] = []
+            failure_stage = error_id = error_type = None
             try:
+                failure_stage = "source_fetch"
                 snapshots, failures = await self._async_snapshots(refetch=force)
                 combined: dict[int, list[Measurement]] = defaultdict(list)
                 for snapshot in snapshots:
@@ -192,6 +254,9 @@ class HistorySyncManager:
                     skipped += len(deduplicated) - len(new)
                     if not new:
                         continue
+                    failure_stage = "recorder_metadata"
+                    metadata = statistic_metadata(self.entry.entry_id, kind)
+                    statistic_ids.append(metadata["statistic_id"])
                     affected_hours = {_hour(item.measured_at) for item in new}
                     candidate_known = dict(self._known)
                     candidate_known.update({_identity(item): item for item in new})
@@ -200,30 +265,54 @@ class HistorySyncManager:
                         for item in candidate_known.values()
                         if item.raw_kind == kind and _hour(item.measured_at) in affected_hours
                     ]
-                    self._importer(
-                        self.hass,
-                        statistic_metadata(self.entry.entry_id, kind),
-                        hourly_statistics(affected),
-                    )
+                    prepared = hourly_statistics(affected)
+                    failure_stage = "recorder_import"
+                    self._importer(self.hass, metadata, prepared)
+                    failure_stage = "recorder_verification"
+                    await self._verifier(self.hass, metadata, prepared)
                     self._known.update({_identity(item): item for item in new})
                     imported += len(new)
-            except Exception:
-                _LOGGER.warning("HealthPlanet history sync failed: error_id=history_sync_failed")
+            except Exception as error:
+                error_type = type(error).__name__
+                error_id = {
+                    "recorder_metadata": "history_recorder_metadata_invalid",
+                    "recorder_import": "history_recorder_import_failed",
+                    "recorder_verification": "history_recorder_verification_failed",
+                }.get(failure_stage or "", "history_source_failed")
+                _LOGGER.warning(
+                    "HealthPlanet history sync failed: stage=%s kind=%s "
+                    "error_id=%s exception_type=%s recorder_api=%s "
+                    "statistic_target_type=external",
+                    failure_stage,
+                    kind if "kind" in locals() else None,
+                    error_id,
+                    error_type,
+                    "async_add_external_statistics",
+                )
                 result = "failed"
             else:
                 result = (
                     "partial" if failures and snapshots else "failed" if failures else "success"
                 )
                 if result == "failed":
+                    failure_stage = "source_fetch"
+                    error_id = "history_source_failed"
                     _LOGGER.warning(
-                        "HealthPlanet history sync failed: error_id=history_sync_failed"
+                        "HealthPlanet history sync failed: stage=source_fetch "
+                        "error_id=history_source_failed"
                     )
+                else:
+                    failure_stage = None
             self.status = HistorySyncStatus(
                 last_history_sync=started,
                 result=result,
                 records_seen=seen,
                 records_imported=imported,
                 records_skipped=skipped,
+                failure_stage=failure_stage,
+                error_id=error_id,
+                error_type=error_type,
+                statistic_ids=tuple(sorted(set(statistic_ids))),
             )
             return self.status
 

@@ -394,6 +394,7 @@ async def test_split_diagnostics_exclude_credentials_values_and_measurement_time
         "website",
         "history",
         "safe_update",
+        "oauth",
     }
     for forbidden in (
         "Private Family Name",
