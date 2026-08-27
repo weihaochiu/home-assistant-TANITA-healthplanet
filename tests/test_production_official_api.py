@@ -167,3 +167,22 @@ async def test_official_update_uses_one_call_per_endpoint_not_per_tag():
     assert session.posts[0][2]["tag"] == "6021,6022"
     assert session.posts[1][2]["tag"] == "622E,622F,6230"
     assert all(posted["date"] == "1" for _, _, posted in session.posts)
+
+
+@pytest.mark.asyncio
+async def test_official_history_uses_documented_bounded_range_and_keeps_rows():
+    body = json.dumps(
+        {
+            "data": [
+                {"tag": "6021", "keydata": "60", "date": "202608010100"},
+                {"tag": "6021", "keydata": "61", "date": "202608020100"},
+            ]
+        }
+    )
+    session = FakeHttpSession(body=body)
+    snapshot = await OfficialApiClient(session, "synthetic-token-never-use").async_fetch_history(90)
+    assert [item.value for item in snapshot.history[1]] == [60, 61]
+    assert snapshot.measurements[1].value == 61
+    assert all(posted["date"] == "1" for _, _, posted in session.posts)
+    assert all("from" in posted and "to" in posted for _, _, posted in session.posts)
+    assert all(len(posted["from"]) == 14 for _, _, posted in session.posts)

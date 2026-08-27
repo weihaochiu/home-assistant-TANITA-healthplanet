@@ -85,6 +85,15 @@ def test_realistic_email_is_reported_but_synthetic_invalid_domain_is_allowed():
     assert len(real) == 1
     assert real[0].risk == "email_like_identifier"
     assert realistic_email.decode() not in repr(real)
+
+
+def test_required_hass_brand_retina_filename_is_not_an_email_identifier():
+    findings = secret_audit._content_findings(
+        PurePosixPath("tests/brand_reference.py"),
+        b'asset = "brand/icon@2x.png"',
+        location="tests/brand_reference.py",
+    )
+    assert findings == []
     synthetic = secret_audit._content_findings(
         PurePosixPath("tests/fixture.json"),
         b'{"login":"synthetic-user@example.invalid"}',

@@ -14,12 +14,16 @@ def test_required_hacs_integration_files_exist():
         "const.py",
         "config_flow.py",
         "application_credentials.py",
+        "button.py",
         "coordinator.py",
         "sensor.py",
         "diagnostics.py",
+        "history.py",
         "strings.json",
         "translations/en.json",
         "translations/zh-Hant.json",
+        "brand/icon.png",
+        "brand/icon@2x.png",
     }
     assert all((INTEGRATION / relative).is_file() for relative in required)
     assert (ROOT / "hacs.json").is_file()
@@ -29,20 +33,24 @@ def test_required_hacs_integration_files_exist():
         "SECURITY.md",
         "CHANGELOG.md",
         "docs/ARCHITECTURE.md",
+        "docs/HEALTHPLANET_API_SETUP.md",
+        "docs/HEALTHPLANET_API_SETUP.zh-TW.md",
         "docs/PRIVACY.md",
         "docs/TROUBLESHOOTING.md",
     ):
         assert (ROOT / relative).is_file()
 
 
-def test_manifest_and_hacs_metadata_are_pinned_for_v011():
+def test_manifest_and_hacs_metadata_are_pinned_for_v020():
     manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     assert manifest["domain"] == "tanita_healthplanet"
-    assert manifest["version"] == "0.1.1"
+    assert manifest["version"] == "0.2.0"
+    assert manifest["name"] == "HealthPlanet for Home Assistant"
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"
     assert hacs["homeassistant"] == "2026.8.0"
+    assert hacs["name"] == "HealthPlanet for Home Assistant"
     keys = list(manifest)
     assert keys[:2] == ["domain", "name"]
     assert keys[2:] == sorted(keys[2:])
@@ -58,6 +66,45 @@ def test_translations_have_same_sensor_keys():
     assert len(expected) == 13
     assert set(english["entity"]["sensor"]) == expected
     assert set(traditional_chinese["entity"]["sensor"]) == expected
+    assert strings["title"] == "HealthPlanet for Home Assistant"
+    assert english["title"] == strings["title"]
+    assert traditional_chinese["title"] == strings["title"]
+
+
+def test_original_local_brand_assets_are_valid_png_files():
+    expected = {"icon.png": (256, 256), "icon@2x.png": (512, 512)}
+    for name, dimensions in expected.items():
+        path = INTEGRATION / "brand" / name
+        assert path.is_file()
+        payload = path.read_bytes()
+        assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+        width = int.from_bytes(payload[16:20], "big")
+        height = int.from_bytes(payload[20:24], "big")
+        assert (width, height) == dimensions
+        assert width == height
+        assert path.stat().st_size < 500_000
+
+
+def test_unofficial_and_trademark_notices_are_present():
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    chinese = (ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
+    assert "unofficial" in readme.casefold()
+    assert "not affiliated" in readme.casefold()
+    assert "not endorsed" in readme.casefold()
+    assert "not sponsored" in readme.casefold()
+    assert "## Trademark notice" in readme
+    assert "非官方" in chinese
+    assert "無隸屬" in chinese
+    assert "無贊助" in chinese
+    assert "無背書" in chinese
+    assert "## 商標與非官方專案聲明" in chinese
+
+
+def test_no_official_brand_artifact_is_bundled():
+    bundled = {path.name.casefold() for path in INTEGRATION.rglob("*") if path.is_file()}
+    assert bundled.isdisjoint(
+        {"tanita.png", "tanita-logo.png", "healthplanet.png", "healthplanet-app-icon.png"}
+    )
 
 
 def test_website_warning_mentions_unofficial_endpoint_and_storage_risk():

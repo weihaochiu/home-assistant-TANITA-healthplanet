@@ -50,6 +50,8 @@ def test_innerscan_selects_each_tags_latest_valid_measurement():
     assert parsed.available_tags == ("6021", "6022")
     assert parsed.unavailable_tags == ()
     assert parsed.measurements[1].measured_at == datetime(2099, 1, 1, 18, 4, tzinfo=UTC)
+    assert [item.value for item in parsed.history[1]] == [101.25, 303.75]
+    assert [item.value for item in parsed.history[2]] == [202.5, 404]
 
 
 @pytest.mark.parametrize("missing", [None, "", "-"])
@@ -104,6 +106,9 @@ def test_blood_pressure_uses_complete_pair_and_cotimed_pulse():
     }
     assert parsed.complete_pair_found is True
     assert parsed.available_tags == ("622E", "622F", "6230")
+    assert [item.value for item in parsed.history[101]] == [501]
+    assert [item.value for item in parsed.history[102]] == [502]
+    assert [item.value for item in parsed.history[103]] == [503]
 
 
 def test_blood_pressure_pair_can_be_complete_without_pulse():
@@ -151,6 +156,9 @@ def test_newest_incomplete_pressure_data_does_not_replace_recent_complete_pair()
     assert parsed.measurements[101].value == 801
     assert parsed.measurements[102].value == 802
     assert parsed.measurements[103].value == 803
+    assert [item.value for item in parsed.history[101]] == [801]
+    assert [item.value for item in parsed.history[102]] == [802]
+    assert [item.value for item in parsed.history[103]] == [803]
 
 
 @pytest.mark.parametrize(

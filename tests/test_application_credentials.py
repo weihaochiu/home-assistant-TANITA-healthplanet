@@ -15,7 +15,11 @@ from custom_components.tanita_healthplanet import application_credentials
 from custom_components.tanita_healthplanet.application_credentials import (
     HealthPlanetOAuth2Implementation,
 )
-from custom_components.tanita_healthplanet.const import DOMAIN, OFFICIAL_SCOPE
+from custom_components.tanita_healthplanet.const import (
+    DOMAIN,
+    OFFICIAL_REDIRECT_URI,
+    OFFICIAL_SCOPE,
+)
 
 
 class SyntheticTokenResponse:
@@ -53,6 +57,16 @@ def implementation(hass=None):
 
 def test_application_credentials_adds_both_official_scopes():
     assert implementation().extra_authorize_data == {"scope": OFFICIAL_SCOPE}
+    assert implementation().redirect_uri == OFFICIAL_REDIRECT_URI
+
+
+@pytest.mark.asyncio
+async def test_manual_authorize_url_has_fixed_redirect_and_no_state():
+    url = await implementation().async_generate_manual_authorize_url()
+    assert "redirect_uri=https://www.healthplanet.jp/success.html" in url
+    assert "scope=innerscan,sphygmomanometer" in url
+    assert "response_type=code" in url
+    assert "state=" not in url
 
 
 @pytest.mark.asyncio
@@ -96,6 +110,19 @@ async def test_invalid_expiry_uses_positive_local_fallback(monkeypatch):
     token = await implementation()._token_request({"grant_type": "authorization_code"})
     assert isinstance(token["expires_in"], int)
     assert token["expires_in"] > 0
+
+
+@pytest.mark.asyncio
+async def test_manual_exchange_returns_only_access_token_and_fixed_redirect(monkeypatch):
+    session = SyntheticTokenSession('{"access_token":"synthetic-token-never-use"}')
+    monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda hass: session)
+    access_token = await implementation().async_exchange_authorization_code(
+        "synthetic-code-never-use"
+    )
+    assert access_token == "synthetic-token-never-use"
+    posted = session.calls[0][1]["data"]
+    assert posted["redirect_uri"] == OFFICIAL_REDIRECT_URI
+    assert posted["grant_type"] == "authorization_code"
 
 
 @pytest.mark.asyncio

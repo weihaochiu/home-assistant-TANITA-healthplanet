@@ -43,6 +43,7 @@ EMAIL_PATTERN = re.compile(
     r"[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}",
     re.IGNORECASE | re.ASCII,
 )
+SAFE_EMAIL_LIKE_LITERALS = {"icon@2x.png"}
 HEADER_SECRET_PATTERN = re.compile(rb"(?im)^\s*(?:cookie|authorization)\s*:\s*([^\r\n]{6,})")
 STRUTS_TOKEN_VALUE_PATTERN = re.compile(
     rb"(?i)org\.apache\.struts\.taglib\.html\.TOKEN\s*[=:]\s*"
@@ -181,6 +182,8 @@ def _content_findings(
     text = data.decode("utf-8", errors="ignore")
     for email_match in EMAIL_PATTERN.finditer(text):
         value = email_match.group(0)
+        if value.casefold() in SAFE_EMAIL_LIKE_LITERALS:
+            continue
         context = text[max(0, email_match.start() - 64) : email_match.end() + 64].casefold()
         if not any(marker.decode() in context for marker in SAFE_LITERAL_MARKERS):
             findings.append(

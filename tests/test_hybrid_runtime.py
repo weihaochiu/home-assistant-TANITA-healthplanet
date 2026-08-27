@@ -202,6 +202,9 @@ async def test_official_only_creates_five_sensors(hass):
     entities = await _entities_for_mode(hass, MODE_OFFICIAL_ONLY)
     assert len(entities) == 5
     assert {item.extra_state_attributes["data_source"] for item in entities} == {SOURCE_OFFICIAL}
+    assert {item.extra_state_attributes["measurement_time"] for item in entities} == {
+        SYNTHETIC_TIME.isoformat()
+    }
 
 
 async def test_hybrid_creates_thirteen_source_owned_sensors_on_one_device(hass):
