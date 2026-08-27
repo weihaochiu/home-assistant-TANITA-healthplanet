@@ -20,7 +20,13 @@ from homeassistant.helpers.config_entry_oauth2_flow import LocalOAuth2Implementa
 from multidict import CIMultiDict, CIMultiDictProxy
 from yarl import URL
 
-from .const import DOMAIN, OFFICIAL_AUTH_URL, OFFICIAL_SCOPE, OFFICIAL_TOKEN_URL
+from .const import (
+    DOMAIN,
+    OFFICIAL_AUTH_URL,
+    OFFICIAL_REDIRECT_URI,
+    OFFICIAL_SCOPE,
+    OFFICIAL_TOKEN_URL,
+)
 
 # HealthPlanet documents authorization_code as its only grant and does not
 # document refresh_token or expiry. A long HA-side validity window avoids
@@ -46,6 +52,41 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
     @override
     def extra_authorize_data(self) -> dict[str, str]:
         return {"scope": OFFICIAL_SCOPE}
+
+    @property
+    @override
+    def redirect_uri(self) -> str:
+        """Use HealthPlanet's documented manual-code redirect."""
+        return OFFICIAL_REDIRECT_URI
+
+    async def async_generate_manual_authorize_url(self) -> str:
+        """Build a provider-compatible URL without a state callback."""
+        from yarl import URL
+
+        return str(
+            URL(self.authorize_url).with_query(
+                {
+                    "client_id": self.client_id,
+                    "redirect_uri": OFFICIAL_REDIRECT_URI,
+                    "scope": OFFICIAL_SCOPE,
+                    "response_type": "code",
+                }
+            )
+        )
+
+    async def async_exchange_authorization_code(self, code: str) -> str:
+        """Exchange one in-memory authorization code and return only the access token."""
+        request_data = {
+            "redirect_uri": OFFICIAL_REDIRECT_URI,
+            "code": code,
+            "grant_type": "authorization_code",
+        }
+        try:
+            token = await self._token_request(request_data)
+        finally:
+            request_data.clear()
+            code = ""
+        return str(token["access_token"])
 
     async def _token_request(self, data: dict[str, Any]) -> dict[str, Any]:
         """Request a token without ever logging the response payload."""
@@ -152,5 +193,5 @@ async def async_get_description_placeholders(hass: HomeAssistant) -> dict[str, s
     """Describe the required HealthPlanet application registration."""
     return {
         "oauth_scope": OFFICIAL_SCOPE,
-        "redirect_uri": "https://my.home-assistant.io/redirect/oauth",
+        "redirect_uri": OFFICIAL_REDIRECT_URI,
     }

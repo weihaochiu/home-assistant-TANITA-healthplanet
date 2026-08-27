@@ -5,14 +5,17 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from datetime import UTC, datetime, timedelta
 from html.parser import HTMLParser
 from time import monotonic
 from typing import Any
 from urllib.parse import urljoin, urlsplit
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
 from .const import (
+    JST_TIMEZONE,
     OFFICIAL_INNERSCAN_KINDS,
     OFFICIAL_INNERSCAN_URL,
     OFFICIAL_SPHYGMO_KINDS,
@@ -156,6 +159,7 @@ class OfficialApiClient:
         url: str,
         tags: tuple[str, ...],
         parser: Any,
+        history_days: int | None = None,
     ) -> tuple[OfficialParseResult, int]:
         access_token = await self._async_current_access_token()
         form = {
@@ -163,6 +167,10 @@ class OfficialApiClient:
             "tag": ",".join(tags),
             "date": "1",
         }
+        if history_days is not None:
+            now_jst = datetime.now(UTC).astimezone(ZoneInfo(JST_TIMEZONE))
+            form["from"] = (now_jst - timedelta(days=history_days)).strftime("%Y%m%d%H%M%S")
+            form["to"] = now_jst.strftime("%Y%m%d%H%M%S")
         try:
             async with self._session.post(
                 url,
@@ -189,8 +197,9 @@ class OfficialApiClient:
         body = ""
         return parser(payload), response.status
 
-    async def async_fetch(self) -> ProviderSnapshot:
+    async def _async_fetch(self, history_days: int | None) -> ProviderSnapshot:
         measurements: dict[int, Any] = {}
+        history: dict[int, tuple[Any, ...]] = {}
         errors: dict[int, str] = {}
         statuses: dict[str, EndpointStatus] = {}
         self._last_endpoint_statuses = statuses
@@ -212,7 +221,9 @@ class OfficialApiClient:
         )
         for name, url, tags, kinds, parser in endpoints:
             try:
-                parsed, http_status = await self._async_fetch_endpoint(url, tags, parser)
+                parsed, http_status = await self._async_fetch_endpoint(
+                    url, tags, parser, history_days
+                )
             except HealthPlanetAuthError:
                 statuses[name] = EndpointStatus(
                     outcome="auth_error",
@@ -252,6 +263,7 @@ class OfficialApiClient:
                 )
                 continue
             measurements.update(parsed.measurements)
+            history.update(parsed.history)
             statuses[name] = EndpointStatus(
                 outcome=(
                     "available"
@@ -266,9 +278,18 @@ class OfficialApiClient:
             )
         return ProviderSnapshot(
             measurements=measurements,
+            history=history,
             errors=errors,
             endpoint_statuses=dict(statuses),
         )
+
+    async def async_fetch(self) -> ProviderSnapshot:
+        """Fetch the provider's current/latest response."""
+        return await self._async_fetch(None)
+
+    async def async_fetch_history(self, days: int) -> ProviderSnapshot:
+        """Fetch documented official history, bounded to 90 days by options."""
+        return await self._async_fetch(days)
 
     async def async_close(self) -> None:
         self._access_token = ""
@@ -411,6 +432,7 @@ class WebsiteApiClient:
 
     async def _fetch_once(self) -> ProviderSnapshot:
         measurements: dict[int, Any] = {}
+        history: dict[int, tuple[Any, ...]] = {}
         errors: dict[int, str] = {}
         statuses: dict[int, KindStatus] = {}
         self._last_kind_statuses = statuses
@@ -525,6 +547,7 @@ class WebsiteApiClient:
                 body = ""
             measurement = parsed.measurements[-1] if parsed.measurements else None
             measurements[kind] = measurement
+            history[kind] = parsed.measurements
             statuses[kind] = KindStatus(
                 kind=kind,
                 outcome="available" if measurement is not None else "null",
@@ -536,6 +559,7 @@ class WebsiteApiClient:
             )
         return ProviderSnapshot(
             measurements=measurements,
+            history=history,
             errors=errors,
             kind_statuses=dict(statuses),
         )

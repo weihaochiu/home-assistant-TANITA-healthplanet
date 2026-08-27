@@ -72,6 +72,7 @@ class EndpointStatus:
 @dataclass(frozen=True)
 class ProviderSnapshot:
     measurements: dict[int, Measurement | None]
+    history: dict[int, tuple[Measurement, ...]] = field(default_factory=dict)
     errors: dict[int, str] = field(default_factory=dict)
     kind_statuses: dict[int, KindStatus] = field(default_factory=dict)
     endpoint_statuses: dict[str, EndpointStatus] = field(default_factory=dict)
@@ -91,6 +92,7 @@ class RuntimeData:
     website_coordinator: WebsiteCoordinator | None = None
     official_provider: HealthPlanetProvider | None = None
     website_provider: HealthPlanetProvider | None = None
+    history_sync: object | None = None
 
     @property
     def coordinator(self) -> OfficialCoordinator | WebsiteCoordinator:

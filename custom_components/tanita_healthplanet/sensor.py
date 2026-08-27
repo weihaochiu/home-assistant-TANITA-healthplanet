@@ -170,5 +170,11 @@ class HealthPlanetSensor(CoordinatorEntity[SourceCoordinator], SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, str]:
-        """Expose only the non-sensitive source label."""
-        return {"data_source": self.entity_description.data_source}
+        """Expose source and the provider's true timestamp in the user's own UI."""
+        measurement = self._measurement
+        return {
+            "data_source": self.entity_description.data_source,
+            "measurement_time": (
+                measurement.measured_at.isoformat() if measurement is not None else ""
+            ),
+        }

@@ -310,6 +310,7 @@ def parse_website_payload_result(payload: Any, kind: int) -> WebsiteParseResult:
                 raw_kind=kind,
             )
         )
+    measurements = list({item.measured_at: item for item in measurements}.values())
     measurements.sort(key=lambda item: item.measured_at)
     return WebsiteParseResult(
         measurements=tuple(measurements),
@@ -332,6 +333,7 @@ class OfficialParseResult:
     """Official measurements plus privacy-safe structural metadata."""
 
     measurements: dict[int, Measurement | None]
+    history: dict[int, tuple[Measurement, ...]]
     record_count: int
     available_tags: tuple[str, ...]
     unavailable_tags: tuple[str, ...]
@@ -376,7 +378,7 @@ def _official_measurement(
 
 
 def parse_official_innerscan_payload(payload: Any) -> OfficialParseResult:
-    """Parse documented innerscan records and select each tag's latest valid row."""
+    """Parse all documented innerscan rows and select each tag's latest row."""
     records = _official_records(payload)
     candidates: dict[int, list[Measurement]] = {1: [], 2: []}
     for record in records:
@@ -397,9 +399,18 @@ def parse_official_innerscan_payload(payload: Any) -> OfficialParseResult:
         candidates[kind].append(
             _official_measurement(record, kind=kind, measured_at=measured_at, value=value)
         )
+    history = {
+        kind: tuple(
+            sorted(
+                {item.measured_at: item for item in values}.values(),
+                key=lambda item: item.measured_at,
+            )
+        )
+        for kind, values in candidates.items()
+    }
     measurements = {
         kind: max(values, key=lambda item: item.measured_at) if values else None
-        for kind, values in candidates.items()
+        for kind, values in history.items()
     }
     available = tuple(
         METRICS[kind].official_tag or "" for kind in (1, 2) if measurements[kind] is not None
@@ -409,6 +420,7 @@ def parse_official_innerscan_payload(payload: Any) -> OfficialParseResult:
     )
     return OfficialParseResult(
         measurements=measurements,
+        history=history,
         record_count=len(records),
         available_tags=available,
         unavailable_tags=unavailable,
@@ -423,7 +435,7 @@ _SPHYGMO_TAG_KIND = {
 
 
 def parse_official_sphygmomanometer_payload(payload: Any) -> OfficialParseResult:
-    """Select the latest complete blood-pressure pair and co-timed pulse."""
+    """Keep every complete pressure pair and only its co-timed pulse."""
     records = _official_records(payload)
     grouped: dict[datetime, dict[int, Measurement]] = {}
     for record in records:
@@ -451,8 +463,17 @@ def parse_official_sphygmomanometer_payload(payload: Any) -> OfficialParseResult
         for measured_at, measurements in grouped.items()
         if 101 in measurements and 102 in measurements
     ]
-    selected = grouped[max(complete_times)] if complete_times else {}
+    complete_times.sort()
+    selected = grouped[complete_times[-1]] if complete_times else {}
     measurements = {kind: selected.get(kind) for kind in (101, 102, 103)}
+    history = {
+        kind: tuple(
+            grouped[measured_at][kind]
+            for measured_at in complete_times
+            if kind in grouped[measured_at]
+        )
+        for kind in (101, 102, 103)
+    }
     available = tuple(
         METRICS[kind].official_tag or ""
         for kind in (101, 102, 103)
@@ -463,6 +484,7 @@ def parse_official_sphygmomanometer_payload(payload: Any) -> OfficialParseResult
     )
     return OfficialParseResult(
         measurements=measurements,
+        history=history,
         record_count=len(records),
         available_tags=available,
         unavailable_tags=unavailable,

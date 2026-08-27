@@ -1,9 +1,9 @@
-"""TANITA HealthPlanet integration setup."""
+"""HealthPlanet for Home Assistant integration setup."""
 
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -11,12 +11,12 @@ if TYPE_CHECKING:
 
     from .models import RuntimeData
 
-    type HealthPlanetConfigEntry = ConfigEntry[RuntimeData]
+    HealthPlanetConfigEntry: TypeAlias = ConfigEntry[RuntimeData]  # noqa: UP040
 else:
     HealthPlanetConfigEntry = Any
 
-PLATFORMS = ["sensor"]
-CONFIG_ENTRY_VERSION = 2
+PLATFORMS = ["sensor", "button"]
+CONFIG_ENTRY_VERSION = 3
 CONFIG_ENTRY_MINOR_VERSION = 0
 
 
@@ -58,13 +58,14 @@ async def async_migrate_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntr
         return False
     if entry.version == CONFIG_ENTRY_VERSION:
         return True
-    if entry.version != 1:
+    if entry.version not in {1, 2}:
         return False
 
     data = dict(entry.data)
-    provider = data.get(CONF_PROVIDER)
-    data[CONF_MODE] = MODE_OFFICIAL_ONLY if provider == PROVIDER_OFFICIAL else MODE_WEBSITE_ONLY
-    data.pop(CONF_PROVIDER, None)
+    if entry.version == 1:
+        provider = data.get(CONF_PROVIDER)
+        data[CONF_MODE] = MODE_OFFICIAL_ONLY if provider == PROVIDER_OFFICIAL else MODE_WEBSITE_ONLY
+        data.pop(CONF_PROVIDER, None)
     hass.config_entries.async_update_entry(
         entry,
         data=data,
@@ -79,13 +80,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry)
     import aiohttp
     from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
     from homeassistant.helpers import aiohttp_client
-    from homeassistant.helpers.config_entry_oauth2_flow import (
-        OAuth2Session,
-        async_get_config_entry_implementation,
-    )
 
     from .api import OfficialApiClient, WebsiteApiClient
     from .const import (
+        CONF_ACCESS_TOKEN,
         CONF_LOGIN_ID,
         CONF_PASSWORD,
         CONF_REAUTH_SOURCE,
@@ -98,6 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry)
         WEBSITE_KINDS,
     )
     from .coordinator import OfficialCoordinator, WebsiteCoordinator
+    from .history import HistorySyncManager
     from .models import RuntimeData
 
     mode = _entry_mode(dict(entry.data))
@@ -125,14 +124,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry)
 
     try:
         if mode in {MODE_HYBRID, MODE_OFFICIAL_ONLY}:
-            if "token" not in entry.data or "auth_implementation" not in entry.data:
+            access_token = entry.data.get(CONF_ACCESS_TOKEN)
+            legacy_token = entry.data.get("token")
+            if not isinstance(access_token, str) and isinstance(legacy_token, dict):
+                access_token = legacy_token.get("access_token")
+            if not isinstance(access_token, str) or not access_token:
                 auth_failures.add(SOURCE_OFFICIAL)
             else:
-                implementation = await async_get_config_entry_implementation(hass, entry)
-                oauth_session = OAuth2Session(hass, entry, implementation)
                 official_provider = OfficialApiClient(
                     aiohttp_client.async_get_clientsession(hass),
-                    oauth_session=oauth_session,
+                    access_token=access_token,
                 )
                 runtime.official_provider = official_provider
                 runtime.official_coordinator = OfficialCoordinator(
@@ -192,6 +193,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: HealthPlanetConfigEntry)
             raise ConfigEntryNotReady("healthplanet_all_configured_sources_unavailable")
         if auth_failures:
             _start_reauth()
+
+        history_sync = HistorySyncManager(hass, entry, runtime)
+        runtime.history_sync = history_sync
+        await history_sync.async_sync(force=False)
+        for coordinator in runtime.coordinators:
+            entry.async_on_unload(
+                coordinator.async_add_listener(
+                    lambda: hass.async_create_task(
+                        history_sync.async_maybe_sync(),
+                        "HealthPlanet incremental history sync",
+                    )
+                )
+            )
 
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     except Exception:

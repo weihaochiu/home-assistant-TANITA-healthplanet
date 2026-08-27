@@ -90,7 +90,20 @@ async def async_get_config_entry_diagnostics(
         "mode": _entry_mode(dict(entry.data)),
         "official": None,
         "website": None,
+        "history": None,
     }
+    history_sync = getattr(runtime, "history_sync", None)
+    status = getattr(history_sync, "status", None)
+    if status is not None:
+        result["history"] = {
+            "last_history_sync": (
+                status.last_history_sync.isoformat() if status.last_history_sync else None
+            ),
+            "history_sync_result": status.result,
+            "records_seen": status.records_seen,
+            "records_imported": status.records_imported,
+            "records_skipped": status.records_skipped,
+        }
     if official is not None:
         statuses = getattr(official, "endpoint_statuses", {})
         result["official"] = {

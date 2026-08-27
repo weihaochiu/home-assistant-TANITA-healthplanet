@@ -1,4 +1,4 @@
-"""Constants for the TANITA HealthPlanet integration."""
+"""Constants for HealthPlanet for Home Assistant."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 DOMAIN = "tanita_healthplanet"
-PLATFORMS = ["sensor"]
-VERSION = "0.1.1"
+PLATFORMS = ["sensor", "button"]
+VERSION = "0.2.0"
 
 MODE_HYBRID = "hybrid"
 MODE_OFFICIAL_ONLY = "official_only"
@@ -37,14 +37,22 @@ CONF_UPDATE_INTERVAL = "update_interval"
 CONF_OFFICIAL_UPDATE_INTERVAL = "official_update_interval"
 CONF_WEBSITE_UPDATE_INTERVAL = "website_update_interval"
 CONF_REAUTH_SOURCE = "reauth_source"
+CONF_HISTORY_SYNC_ENABLED = "history_sync_enabled"
+CONF_OFFICIAL_HISTORY_DAYS = "official_history_days"
 
 DEFAULT_UPDATE_INTERVAL_MINUTES = 60
 MIN_UPDATE_INTERVAL_MINUTES = 30
 MAX_UPDATE_INTERVAL_MINUTES = 1440
 DEFAULT_UPDATE_INTERVAL = timedelta(minutes=DEFAULT_UPDATE_INTERVAL_MINUTES)
+DEFAULT_HISTORY_SYNC_ENABLED = True
+DEFAULT_OFFICIAL_HISTORY_DAYS = 90
+MAX_OFFICIAL_HISTORY_DAYS = 90
+WEBSITE_HISTORY_DAYS = 31
+HISTORY_SYNC_INTERVAL = timedelta(hours=24)
 
 OFFICIAL_AUTH_URL = "https://www.healthplanet.jp/oauth/auth"
 OFFICIAL_TOKEN_URL = "https://www.healthplanet.jp/oauth/token"
+OFFICIAL_REDIRECT_URI = "https://www.healthplanet.jp/success.html"
 OFFICIAL_INNERSCAN_URL = "https://www.healthplanet.jp/status/innerscan.json"
 OFFICIAL_SPHYGMO_URL = "https://www.healthplanet.jp/status/sphygmomanometer.json"
 # Compatibility alias for the original innerscan-only client.
@@ -64,7 +72,12 @@ WEBSITE_HYBRID_KINDS = (3, 4, 5, 6, 7, 14, 22, 23)
 WEBSITE_PRIMARY_KINDS = tuple(kind for kind in WEBSITE_KINDS if kind != 23)
 WEBSITE_REQUEST_INTERVAL_SECONDS = 1.0
 REQUEST_TIMEOUT_SECONDS = 20
-USER_AGENT = "home-assistant-TANITA-healthplanet/0.1.1"
+USER_AGENT = "home-assistant-TANITA-healthplanet/0.2.0"
+
+API_SETUP_DOCS_URL = (
+    "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet/"
+    "blob/main/docs/HEALTHPLANET_API_SETUP.md"
+)
 
 JST_TIMEZONE = "Asia/Tokyo"
 

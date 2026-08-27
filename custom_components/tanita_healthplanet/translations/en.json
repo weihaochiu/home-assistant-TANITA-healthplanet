@@ -1,60 +1,56 @@
 {
-  "title": "TANITA HealthPlanet",
+  "title": "HealthPlanet for Home Assistant",
   "config": {
     "abort": {
       "already_configured": "This HealthPlanet website account is already configured.",
+      "callback_oauth_not_supported": "Callback OAuth is not supported by HealthPlanet. Use the manual authorization-code step.",
+      "missing_credentials": "No HealthPlanet API application is configured. One Client ID / Client Secret is shared by all family members on this Home Assistant. Follow {docs_url} first.",
+      "oauth_implementation_unavailable": "The selected HealthPlanet Application Credential is unavailable.",
       "reauth_successful": "Reauthentication was successful.",
       "reconfigure_no_changes": "No changes were made.",
-      "reconfigure_not_supported": "This entry is already using an official-capable mode."
+      "reconfigure_not_supported": "This entry is already Hybrid."
     },
     "error": {
+      "authorization_code_invalid": "The authorization code is invalid, expired, or rejected. Generate a new code and use it within 10 minutes.",
       "cannot_connect": "Unable to connect to HealthPlanet.",
       "experimental_confirmation_required": "You must explicitly accept the experimental website endpoint risk.",
       "invalid_auth": "Authentication failed. Check the supplied credentials.",
       "manual_interaction_required": "HealthPlanet requires browser interaction that this integration will not bypass.",
-      "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault."
+      "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault.",
+      "token_exchange_failed": "HealthPlanet token exchange failed. Generate a new authorization code and try again."
     },
     "step": {
       "user": {
-        "title": "Choose a HealthPlanet mode",
-        "description": "Hybrid is recommended. Official data supplies weight, body fat, blood pressure, and pulse; the experimental website source supplies only body-composition metrics unavailable from the official API.",
-        "data": {
-          "mode": "Mode"
-        },
-        "data_description": {
-          "mode": "hybrid (recommended), official_only, or website_only (experimental)"
-        }
+        "title": "Add a family member",
+        "description": "New accounts use Hybrid: the official API supplies primary metrics and the experimental Website source supplies complementary body-composition metrics.",
+        "data": {"account_label": "Family member name"}
       },
-      "website_opt_in": {
-        "title": "Experimental website data",
-        "description": "Enable the unofficial website source only if you want the eight supplemental body-composition sensors. You must explicitly accept both warnings on the next step.",
-        "data": {
-          "enable_website": "Enable experimental website data"
-        }
+      "manual_authorization": {
+        "title": "Authorize this family member",
+        "description": "Open {authorize_url}, sign in, approve access, copy the code shown by HealthPlanet, and paste it below. The code must be used within 10 minutes. It remains in memory only and is never saved. Redirect URI: {redirect_uri}",
+        "data": {"authorization_code": "One-time authorization code"}
       },
       "website": {
-        "title": "Experimental website source",
-        "description": "This internal endpoint is unofficial and may stop working. The password is stored in Home Assistant .storage, which is not a dedicated encrypted password vault. Cookies and CSRF state remain in memory only.",
+        "title": "Website credentials for this family member",
+        "description": "This unofficial, undocumented endpoint supplies complementary metrics and may change. Website credentials are separate from the shared API Application Credential. The password is stored in Home Assistant .storage, which is not a dedicated encrypted password vault; cookies and CSRF state remain in memory only.",
         "data": {
-          "login_id": "HealthPlanet login ID",
-          "password": "HealthPlanet password",
-          "experimental_confirmed": "I accept the unofficial endpoint risk",
+          "login_id": "HealthPlanet Website login ID",
+          "password": "HealthPlanet Website password",
+          "experimental_confirmed": "I accept the undocumented Website endpoint risk",
           "storage_warning_confirmed": "I accept the .storage credential risk"
         }
       },
       "reauth_website": {
-        "title": "Reauthenticate website source",
-        "description": "Only website credentials are replaced. The existing password is never prefilled.",
-        "data": {
-          "login_id": "HealthPlanet login ID",
-          "password": "HealthPlanet password"
-        }
+        "title": "Reauthenticate Website source",
+        "description": "Only Website credentials are replaced. The existing password is never prefilled.",
+        "data": {"login_id": "HealthPlanet login ID", "password": "HealthPlanet password"}
       },
       "reconfigure": {
-        "title": "Upgrade to Hybrid",
-        "description": "This starts the standard Home Assistant OAuth flow and preserves the existing website credentials.",
+        "title": "Upgrade legacy entry to Hybrid",
+        "description": "The existing source credentials and entity unique IDs are preserved.",
         "data": {
-          "upgrade_to_hybrid": "Upgrade this Website-only entry to Hybrid"
+          "upgrade_to_hybrid": "Upgrade this entry to Hybrid",
+          "account_label": "Family member name"
         }
       }
     }
@@ -62,16 +58,19 @@
   "options": {
     "step": {
       "init": {
-        "title": "HealthPlanet polling",
-        "description": "Minimum 30 minutes. The website endpoint is unofficial and should not be polled frequently.",
+        "title": "HealthPlanet polling and history",
+        "description": "Website history is fixed at the confirmed 31-day range. Official history is capped at 90 days.",
         "data": {
           "official_update_interval": "Official API interval (minutes)",
-          "website_update_interval": "Website interval (minutes)"
+          "website_update_interval": "Website interval (minutes)",
+          "history_sync_enabled": "Enable daily history sync",
+          "official_history_days": "Official history range (days)"
         }
       }
     }
   },
   "entity": {
+    "button": {"sync_history": {"name": "Sync history"}},
     "sensor": {
       "weight": {"name": "Weight"},
       "body_fat_percentage": {"name": "Body fat percentage"},

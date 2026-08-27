@@ -1,71 +1,76 @@
 {
-  "title": "TANITA HealthPlanet",
+  "title": "HealthPlanet for Home Assistant",
   "config": {
     "abort": {
-      "already_configured": "此 HealthPlanet 網站帳號已設定。",
+      "already_configured": "此 HealthPlanet Website 帳號已設定。",
+      "callback_oauth_not_supported": "HealthPlanet 不支援 callback OAuth，請使用手動 authorization code 流程。",
+      "missing_credentials": "尚未設定 HealthPlanet API 應用程式。每套 Home Assistant 只需設定一次 Client ID / Client Secret，所有家庭成員可共用。請先參考 {docs_url}。",
+      "oauth_implementation_unavailable": "選取的 HealthPlanet 應用程式憑證無法使用。",
       "reauth_successful": "重新驗證成功。",
       "reconfigure_no_changes": "未進行變更。",
-      "reconfigure_not_supported": "此 entry 已使用支援官方 API 的模式。"
+      "reconfigure_not_supported": "此 entry 已是 Hybrid。"
     },
     "error": {
+      "authorization_code_invalid": "Authorization code 無效、已過期或被拒絕。請重新取得，並在 10 分鐘內使用。",
       "cannot_connect": "無法連線 HealthPlanet。",
       "experimental_confirmation_required": "必須明確接受非官方 Website endpoint 風險。",
       "invalid_auth": "驗證失敗，請檢查輸入的憑證。",
       "manual_interaction_required": "HealthPlanet 要求瀏覽器互動；本整合不會繞過安全機制。",
-      "storage_confirmation_required": "必須確認 Home Assistant .storage 不是專用加密密碼庫。"
+      "storage_confirmation_required": "必須確認 Home Assistant .storage 不是專用加密密碼庫。",
+      "token_exchange_failed": "HealthPlanet token exchange 失敗，請重新取得 authorization code 後再試。"
     },
     "step": {
       "user": {
-        "title": "選擇 HealthPlanet 模式",
-        "description": "建議使用 Hybrid。官方 API 提供體重、體脂率、血壓及脈搏；Experimental Website 僅補足官方未提供的體組成資料。",
-        "data": {"mode": "模式"},
-        "data_description": {
-          "mode": "hybrid（建議）、official_only，或 website_only（experimental）"
-        }
+        "title": "新增家庭成員",
+        "description": "新帳號直接使用 Hybrid：官方 API 提供主要指標，Experimental Website 補足其他體組成資料。",
+        "data": {"account_label": "家庭成員名稱"}
       },
-      "website_opt_in": {
-        "title": "Experimental Website 資料",
-        "description": "只有需要八個額外體組成 sensors 時才啟用非官方 Website 來源；下一步必須明確接受兩項警告。",
-        "data": {"enable_website": "啟用 Experimental Website 資料"}
+      "manual_authorization": {
+        "title": "授權此家庭成員",
+        "description": "開啟 {authorize_url}，登入並允許存取，複製 HealthPlanet 顯示的 code，再貼到下方。Authorization code 必須在取得後 10 分鐘內使用，只會短暫留在記憶體，絕不保存。Redirect URI：{redirect_uri}",
+        "data": {"authorization_code": "一次性 authorization code"}
       },
       "website": {
-        "title": "Experimental Website 來源",
-        "description": "此內部 endpoint 並非官方 API，可能隨時失效。密碼保存在 Home Assistant .storage；該處不是專用加密密碼庫。Cookie 與 CSRF 狀態只存在記憶體。",
+        "title": "此家庭成員的 Website 憑證",
+        "description": "此未公開 endpoint 提供補充指標，可能隨時改變。Website 帳密與全 HA 共用的 API Application Credential 完全分離。密碼保存在 Home Assistant .storage；Cookie 與 CSRF 只留在記憶體。",
         "data": {
-          "login_id": "HealthPlanet 登入 ID",
-          "password": "HealthPlanet 密碼",
-          "experimental_confirmed": "我接受非官方 endpoint 的風險",
+          "login_id": "HealthPlanet Website 登入 ID",
+          "password": "HealthPlanet Website 密碼",
+          "experimental_confirmed": "我接受未公開 Website endpoint 的風險",
           "storage_warning_confirmed": "我接受 .storage 的憑證保存風險"
         }
       },
       "reauth_website": {
         "title": "重新驗證 Website 來源",
         "description": "只替換 Website 憑證；既有密碼永不預填。",
-        "data": {
-          "login_id": "HealthPlanet 登入 ID",
-          "password": "HealthPlanet 密碼"
-        }
+        "data": {"login_id": "HealthPlanet 登入 ID", "password": "HealthPlanet 密碼"}
       },
       "reconfigure": {
-        "title": "升級為 Hybrid",
-        "description": "使用 Home Assistant 標準 OAuth 流程，並保留既有 Website 憑證。",
-        "data": {"upgrade_to_hybrid": "將此 Website-only entry 升級為 Hybrid"}
+        "title": "將 legacy entry 升級為 Hybrid",
+        "description": "保留既有來源憑證與 entity unique IDs。",
+        "data": {
+          "upgrade_to_hybrid": "將此 entry 升級為 Hybrid",
+          "account_label": "家庭成員名稱"
+        }
       }
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "HealthPlanet 更新頻率",
-        "description": "最短 30 分鐘。Website endpoint 並非官方，不建議頻繁更新。",
+        "title": "HealthPlanet 更新與歷史同步",
+        "description": "Website 歷史固定為已確認的 31 天；官方歷史上限為 90 天。",
         "data": {
           "official_update_interval": "官方 API 更新間隔（分鐘）",
-          "website_update_interval": "Website 更新間隔（分鐘）"
+          "website_update_interval": "Website 更新間隔（分鐘）",
+          "history_sync_enabled": "啟用每日歷史同步",
+          "official_history_days": "官方歷史範圍（天）"
         }
       }
     }
   },
   "entity": {
+    "button": {"sync_history": {"name": "同步歷史"}},
     "sensor": {
       "weight": {"name": "體重"},
       "body_fat_percentage": {"name": "體脂率"},
