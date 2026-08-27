@@ -1,9 +1,10 @@
 {
   "domain": "tanita_healthplanet",
   "name": "HealthPlanet for Home Assistant",
+  "after_dependencies": ["recorder"],
   "codeowners": ["@weihaochiu"],
   "config_flow": true,
-  "dependencies": ["application_credentials", "recorder"],
+  "dependencies": ["application_credentials"],
   "documentation": "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet",
   "integration_type": "service",
   "iot_class": "cloud_polling",
