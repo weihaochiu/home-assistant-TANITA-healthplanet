@@ -2,6 +2,35 @@
 
 Development candidate for a HACS-compatible Home Assistant custom integration. Version 0.1.0 uses an **official-first hybrid** architecture: documented HealthPlanet APIs own every metric they expose, while an explicitly enabled experimental website source fills only the remaining metrics.
 
+## Installation
+
+### Recommended: HACS
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weihaochiu&repository=home-assistant-TANITA-healthplanet&category=integration)
+
+Open this repository directly in HACS. Requires HACS to be installed and configured first.
+
+1. Click the HACS button.
+2. Download TANITA HealthPlanet in HACS.
+3. Restart Home Assistant.
+4. Click the Add Integration button below.
+
+Don't have HACS yet?
+
+[Install and configure HACS first](https://www.hacs.xyz/docs/use/download/download/), then return here and use the button above.
+
+### Add the integration
+
+After installing with HACS and restarting Home Assistant:
+
+[![Add TANITA HealthPlanet to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
+
+This button starts the TANITA HealthPlanet config flow under **Settings → Devices & services → Add Integration**. It does not install the Python component and works only after HACS has installed `custom_components/tanita_healthplanet` and Home Assistant has restarted.
+
+### Alternative: Manual installation / development testing
+
+For development, recovery, or debugging, use the ZIP and component-replacement procedure in [Manual installation and configuration](#manual-installation-and-configuration).
+
 ## Modes
 
 | Mode | Status | Authentication | Sensors |
@@ -16,7 +45,7 @@ Blood-pressure sensors require sphygmomanometer data in the HealthPlanet account
 
 The website endpoint is authenticated but undocumented. It may change or be blocked without notice and is not guaranteed or supported by TANITA. Website-only mode exists for migration and troubleshooting; Hybrid is recommended.
 
-## Install and configure
+## Manual installation and configuration
 
 No release or tag has been created. To test this branch, download its ZIP and replace the entire `custom_components/tanita_healthplanet` folder in Home Assistant; do not mix files from older candidates. Restart Home Assistant, then use **Settings → Devices & services → Add integration → TANITA HealthPlanet**.
 

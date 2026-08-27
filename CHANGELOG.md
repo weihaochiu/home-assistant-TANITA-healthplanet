@@ -3,6 +3,7 @@
 ## 0.1.0 — Unreleased
 
 - Added a HACS-compatible Home Assistant integration with multi-entry config flows.
+- Added My Home Assistant buttons for opening the repository in HACS and starting the TANITA HealthPlanet config flow.
 - Added Official-first Hybrid, Official-only, and experimental Website-only modes.
 - Added Home Assistant Application Credentials OAuth with the documented `innerscan,sphygmomanometer` scope.
 - Added official systolic/diastolic blood pressure and pulse sensors with exact-timestamp complete-pair selection.

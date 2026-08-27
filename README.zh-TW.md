@@ -2,6 +2,37 @@
 
 這是 HACS 相容 custom integration 的 v0.1.0 候選版，採用 **Official-first Hybrid（官方優先混合）**架構：官方 API 對其支援的資料具有唯一所有權；使用者明確啟用後，實驗性 Website source 只補齊官方 API 沒有的項目。
 
+## 安裝
+
+### 建議方式：HACS
+
+[![在 HACS 開啟 TANITA HealthPlanet](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weihaochiu&repository=home-assistant-TANITA-healthplanet&category=integration)
+
+需要先安裝並完成 HACS 設定。
+
+1. 點擊上方按鈕，在自己的 Home Assistant 中直接開啟此 HACS repository。
+2. 在 HACS 下載 TANITA HealthPlanet。
+3. 重新啟動 Home Assistant。
+4. 再點擊下方「新增 TANITA HealthPlanet」按鈕開始設定。
+
+如果尚未安裝 HACS，此按鈕可能顯示「需要使用整合 hacs 方能使用」。這不是 TANITA HealthPlanet 安裝程式錯誤，而是 Home Assistant 尚未具有 HACS integration。
+
+尚未安裝 HACS？
+
+請先[安裝並設定 HACS](https://www.hacs.xyz/docs/use/download/download/)，完成後再回到此頁使用上方按鈕。
+
+### 新增 TANITA HealthPlanet
+
+完成 HACS 安裝並重新啟動 Home Assistant 後：
+
+[![新增 TANITA HealthPlanet 到 Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=tanita_healthplanet)
+
+此按鈕會直接啟動「設定 → 裝置與服務 → 新增整合 → TANITA HealthPlanet」的設定流程；它不會安裝 Python component，只有在 HACS 已安裝 `custom_components/tanita_healthplanet` 且 Home Assistant 已重新啟動後才能使用。
+
+### 替代方式：手動安裝／開發測試
+
+如需開發、復原或除錯，請使用[手動安裝與設定](#手動安裝與設定)中的 ZIP 及完整替換 component 流程。
+
 ## 模式
 
 | 模式 | 狀態 | 認證 | Sensor 數 |
@@ -16,7 +47,7 @@ Hybrid 的體重與體脂率絕不取自 Website。Official source 提供體重�
 
 Website endpoint 需要登入但未公開，可能隨時改版、失效或被封鎖，TANITA 不保證支援。Website-only 主要保留給既有設定遷移及疑難排解；建議使用 Hybrid。
 
-## 安裝與設定
+## 手動安裝與設定
 
 目前沒有 release 或 tag。實機測試請下載此分支 ZIP，完整替換 Home Assistant 中的 `custom_components/tanita_healthplanet` 資料夾，不要混用舊候選版檔案。重新啟動後，到「設定 → 裝置與服務 → 新增整合 → TANITA HealthPlanet」。
 
