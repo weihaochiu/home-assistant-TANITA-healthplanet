@@ -214,6 +214,10 @@ class HistorySyncManager:
                 result = (
                     "partial" if failures and snapshots else "failed" if failures else "success"
                 )
+                if result == "failed":
+                    _LOGGER.warning(
+                        "HealthPlanet history sync failed: error_id=history_sync_failed"
+                    )
             self.status = HistorySyncStatus(
                 last_history_sync=started,
                 result=result,

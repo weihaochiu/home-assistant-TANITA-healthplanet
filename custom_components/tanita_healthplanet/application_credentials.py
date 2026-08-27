@@ -128,9 +128,6 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
                 headers=None,
                 domain=DOMAIN,
             ) from error
-        finally:
-            request_data.clear()
-
         token: dict[str, Any]
         try:
             parsed = json.loads(body)

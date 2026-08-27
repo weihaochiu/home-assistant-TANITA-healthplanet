@@ -374,7 +374,7 @@ class HealthPlanetConfigFlow(
         mode = entry.data[CONF_MODE]
         if mode not in {MODE_WEBSITE_ONLY, MODE_OFFICIAL_ONLY}:
             return self.async_abort(reason="reconfigure_not_supported")
-        if user_input is not None:
+        if user_input is not None and _UPGRADE_TO_HYBRID in user_input:
             if not user_input[_UPGRADE_TO_HYBRID]:
                 return self.async_abort(reason="reconfigure_no_changes")
             self._account_label = _label(user_input[CONF_ACCOUNT_LABEL])
