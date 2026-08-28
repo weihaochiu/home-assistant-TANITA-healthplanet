@@ -3,7 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from aiohttp import ClientError
+from aiohttp import ClientError, web
 
 pytest.importorskip("homeassistant")
 
@@ -47,20 +47,23 @@ class SyntheticTokenSession:
         self.calls = []
 
     async def post(self, url, **kwargs):
-        self.calls.append((url, kwargs))
+        captured = dict(kwargs)
+        if isinstance(request_data := kwargs.get("data"), dict):
+            captured["data"] = dict(request_data)
+        self.calls.append((url, captured))
         if self.error:
             raise self.error
         return SyntheticTokenResponse(self.body, self.status, self.content_type)
 
 
-def implementation(hass=None):
+def implementation(hass=None, token_url="https://www.healthplanet.jp/oauth/token"):
     return HealthPlanetOAuth2Implementation(
         hass or SimpleNamespace(data={}),
         "synthetic-application",
         "synthetic-client",
         "synthetic-secret-never-use",
         "https://www.healthplanet.jp/oauth/auth",
-        "https://www.healthplanet.jp/oauth/token",
+        token_url,
     )
 
 
@@ -102,12 +105,11 @@ async def test_token_response_is_normalized_without_payload_persistence(monkeypa
     )
     assert token["access_token"] == "synthetic-token-never-use"
     assert token["token_type"] == "Bearer"
-    assert int(token["expires_in"]) > 0
-    assert set(token) == {"access_token", "token_type", "expires_in"}
+    assert set(token) == {"access_token", "token_type"}
 
 
 @pytest.mark.asyncio
-async def test_invalid_expiry_uses_positive_local_fallback(monkeypatch):
+async def test_undocumented_expiry_is_not_fabricated(monkeypatch):
     session = SyntheticTokenSession(
         '{"access_token":"synthetic-token-never-use","expires_in":"invalid"}'
     )
@@ -117,8 +119,7 @@ async def test_invalid_expiry_uses_positive_local_fallback(monkeypatch):
         lambda hass: session,
     )
     token = await implementation()._token_request({"grant_type": "authorization_code"})
-    assert isinstance(token["expires_in"], int)
-    assert token["expires_in"] > 0
+    assert "expires_in" not in token
 
 
 @pytest.mark.asyncio
@@ -154,8 +155,31 @@ async def test_missing_token_raises_fixed_oauth_error_without_body(
                 "redirect_uri": "https://example.invalid/callback",
             }
         )
-    assert error.value.message == "oauth_token_missing"
+    assert error.value.message == "oauth_response_invalid"
     assert "must-not-leak" not in repr(error.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "content_category", "response_format"),
+    [
+        ("", "empty", "invalid"),
+        ('{"access_token":', "json", "invalid"),
+        ('{"token_type":"Bearer"}', "json", "json"),
+    ],
+)
+async def test_invalid_success_payload_shapes_are_classified(
+    monkeypatch, body, content_category, response_format
+):
+    hass = SimpleNamespace(data={})
+    session = SyntheticTokenSession(body)
+    monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda current: session)
+    with pytest.raises(OAuth2TokenRequestError) as error:
+        await implementation(hass)._token_request({"grant_type": "authorization_code"})
+    assert error.value.message == "oauth_response_invalid"
+    status = hass.data[DOMAIN]["oauth_status"]
+    assert status["content_category"] == content_category
+    assert status["response_format"] == response_format
 
 
 @pytest.mark.asyncio
@@ -184,33 +208,38 @@ def test_authorization_code_normalization_accepts_only_exact_success_url():
             400,
             '{"error":"invalid_grant","error_description":"private"}',
             OAuth2TokenRequestReauthError,
-            "oauth_token_invalid_grant",
+            "authorization_code_invalid",
         ),
         (
             400,
             "error=invalid_client&error_description=private",
             OAuth2TokenRequestReauthError,
-            "oauth_token_invalid_client",
+            "oauth_client_rejected",
         ),
         (
             401,
             '{"error":"invalid_client"}',
             OAuth2TokenRequestReauthError,
-            "oauth_token_invalid_client",
+            "oauth_client_rejected",
         ),
         (
             403,
             '{"error":"invalid_request"}',
             OAuth2TokenRequestReauthError,
-            "oauth_token_invalid_request",
+            "oauth_response_invalid",
         ),
         (
             429,
             '{"error":"rate_limited"}',
             OAuth2TokenRequestTransientError,
-            "oauth_token_http_error",
+            "oauth_rate_limited",
         ),
-        (500, "temporary-private-body", OAuth2TokenRequestTransientError, "oauth_token_http_error"),
+        (
+            500,
+            "temporary-private-body",
+            OAuth2TokenRequestTransientError,
+            "oauth_provider_unavailable",
+        ),
     ],
 )
 async def test_http_errors_are_allowlisted_and_redacted(
@@ -224,6 +253,8 @@ async def test_http_errors_are_allowlisted_and_redacted(
     assert error.value.message == error_id
     assert hass.data[DOMAIN]["oauth_status"]["last_oauth_http_status"] == status
     assert hass.data[DOMAIN]["oauth_status"]["last_oauth_error_id"] == error_id
+    assert hass.data[DOMAIN]["oauth_status"]["stage"] == "token_exchange"
+    assert hass.data[DOMAIN]["oauth_status"]["last_attempt_result"] == "failed"
     assert "private" not in caplog.text
 
 
@@ -233,16 +264,83 @@ async def test_malformed_success_and_timeout_are_fixed_errors(monkeypatch):
     monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda hass: session)
     with pytest.raises(OAuth2TokenRequestError) as malformed:
         await implementation()._token_request({"grant_type": "authorization_code"})
-    assert malformed.value.message == "oauth_token_response_invalid"
+    assert malformed.value.message == "oauth_response_invalid"
 
     session = SyntheticTokenSession("", error=TimeoutError())
     monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda hass: session)
     with pytest.raises(OAuth2TokenRequestError) as timeout:
         await implementation()._token_request({"grant_type": "authorization_code"})
-    assert timeout.value.message == "healthplanet_oauth_connection_failed"
+    assert timeout.value.message == "cannot_connect"
 
     session = SyntheticTokenSession("", error=ClientError("synthetic network failure"))
     monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda hass: session)
     with pytest.raises(OAuth2TokenRequestError) as network:
         await implementation()._token_request({"grant_type": "authorization_code"})
-    assert network.value.message == "healthplanet_oauth_connection_failed"
+    assert network.value.message == "cannot_connect"
+
+
+@pytest.mark.asyncio
+async def test_html_response_is_classified_without_retaining_body(monkeypatch, caplog):
+    private_html = "<html><body>private-provider-detail</body></html>"
+    hass = SimpleNamespace(data={})
+    session = SyntheticTokenSession(private_html, status=500, content_type="text/html")
+    monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda current: session)
+    with pytest.raises(OAuth2TokenRequestTransientError):
+        await implementation(hass)._token_request({"grant_type": "authorization_code"})
+    status = hass.data[DOMAIN]["oauth_status"]
+    assert status["content_category"] == "html"
+    assert status["response_format"] == "invalid"
+    assert "private-provider-detail" not in caplog.text
+    assert "private-provider-detail" not in repr(status)
+
+
+@pytest.mark.asyncio
+async def test_success_does_not_erase_last_oauth_failure(monkeypatch):
+    hass = SimpleNamespace(data={})
+    failed = SyntheticTokenSession('{"error":"invalid_grant"}', status=400)
+    monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda current: failed)
+    with pytest.raises(OAuth2TokenRequestReauthError):
+        await implementation(hass)._token_request({"grant_type": "authorization_code"})
+
+    success = SyntheticTokenSession('{"access_token":"synthetic-token-never-use"}')
+    monkeypatch.setattr(application_credentials, "async_get_clientsession", lambda current: success)
+    await implementation(hass)._token_request({"grant_type": "authorization_code"})
+    status = hass.data[DOMAIN]["oauth_status"]
+    assert status["last_attempt_result"] == "success"
+    assert status["last_oauth_error_id"] == "authorization_code_invalid"
+    assert status["last_oauth_http_status"] == 400
+
+
+@pytest.mark.asyncio
+async def test_actual_token_request_uses_exact_form_contract(
+    aiohttp_client, monkeypatch, socket_enabled
+):
+    captured = {}
+
+    async def token_handler(request):
+        captured["method"] = request.method
+        captured["content_type"] = request.content_type
+        posted = await request.post()
+        captured["fields"] = set(posted)
+        assert posted["grant_type"] == "authorization_code"
+        assert posted["redirect_uri"] == OFFICIAL_REDIRECT_URI
+        return web.json_response({"access_token": "synthetic-token-never-use"})
+
+    app = web.Application()
+    app.router.add_post("/oauth/token", token_handler)
+    client = await aiohttp_client(app)
+    monkeypatch.setattr(
+        application_credentials,
+        "async_get_clientsession",
+        lambda current: client.session,
+    )
+    token_url = str(client.make_url("/oauth/token"))
+    access_token = await implementation(token_url=token_url).async_exchange_authorization_code(
+        "synthetic-code-never-use"
+    )
+    assert access_token == "synthetic-token-never-use"
+    assert captured == {
+        "method": "POST",
+        "content_type": "application/x-www-form-urlencoded",
+        "fields": {"client_id", "client_secret", "redirect_uri", "code", "grant_type"},
+    }

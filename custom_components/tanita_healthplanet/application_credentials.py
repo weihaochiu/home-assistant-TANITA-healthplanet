@@ -31,10 +31,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__package__)
 _ALLOWED_PROVIDER_ERRORS = {
-    "invalid_grant": "oauth_token_invalid_grant",
-    "invalid_client": "oauth_token_invalid_client",
-    "invalid_request": "oauth_token_invalid_request",
-    "unsupported_grant_type": "oauth_token_unsupported_grant_type",
+    "invalid_grant": "authorization_code_invalid",
+    "invalid_client": "oauth_client_rejected",
+    "invalid_request": "oauth_response_invalid",
+    "unsupported_grant_type": "oauth_response_invalid",
 }
 
 
@@ -66,10 +66,19 @@ def _parsed_token_body(body: str) -> tuple[dict[str, Any], str]:
     return (cast(dict[str, Any], parsed) if isinstance(parsed, dict) else {}, "json")
 
 
-# HealthPlanet documents authorization_code as its only grant and does not
-# document refresh_token or expiry. A long HA-side validity window avoids
-# fabricating refresh calls; an API authentication failure starts reauth.
-_UNDOCUMENTED_EXPIRY_FALLBACK_SECONDS = 10 * 365 * 24 * 60 * 60
+def _content_category(body: str, content_type: str, response_format: str) -> str:
+    """Classify response shape without retaining or exposing its content."""
+    folded_type = content_type.casefold()
+    folded_body = body.lstrip().casefold()
+    if "html" in folded_type or folded_body.startswith(("<!doctype html", "<html")):
+        return "html"
+    if not body:
+        return "empty"
+    if "json" in folded_type or response_format == "json":
+        return "json"
+    if response_format == "form":
+        return "form"
+    return "text"
 
 
 def _oauth_request_info() -> RequestInfo:
@@ -116,12 +125,18 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
         """Exchange one in-memory authorization code and return only the access token."""
         code = normalize_authorization_code(code)
         if not code:
-            self._record_status(0, "none", "none", "oauth_token_invalid_grant", "ValueError")
+            self._record_status(
+                0,
+                "none",
+                "none",
+                "authorization_code_invalid",
+                "ValueError",
+            )
             raise OAuth2TokenRequestReauthError(
                 request_info=_oauth_request_info(),
                 history=(),
                 status=HTTPStatus.BAD_REQUEST,
-                message="oauth_token_invalid_grant",
+                message="authorization_code_invalid",
                 headers=None,
                 domain=DOMAIN,
             )
@@ -157,19 +172,19 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
             body = await response.text()
             token, response_format = _parsed_token_body(body)
             content_type = str(getattr(response, "headers", {}).get("Content-Type", ""))
-            content_category = (
-                "json"
-                if "json" in content_type.casefold() or response_format == "json"
-                else "form"
-                if response_format == "form"
-                else "other"
-            )
+            content_category = _content_category(body, content_type, response_format)
             status = int(response.status)
             if status >= 400:
                 provider_error = token.get("error")
                 error_id = _ALLOWED_PROVIDER_ERRORS.get(
                     provider_error if isinstance(provider_error, str) else "",
-                    "oauth_token_http_error",
+                    "oauth_rate_limited"
+                    if status == HTTPStatus.TOO_MANY_REQUESTS
+                    else "oauth_provider_unavailable"
+                    if status >= 500
+                    else "oauth_client_rejected"
+                    if status in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}
+                    else "oauth_response_invalid",
                 )
                 self._record_status(status, content_category, response_format, error_id)
                 if status == HTTPStatus.TOO_MANY_REQUESTS or status >= 500:
@@ -193,9 +208,13 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
             raise
         except ClientResponseError as error:
             error_id = (
-                "oauth_token_http_error"
-                if error.status not in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}
-                else "oauth_token_invalid_client"
+                "oauth_rate_limited"
+                if error.status == HTTPStatus.TOO_MANY_REQUESTS
+                else "oauth_provider_unavailable"
+                if error.status >= 500
+                else "oauth_client_rejected"
+                if error.status in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}
+                else "oauth_response_invalid"
             )
             self._record_status(error.status, "none", "none", error_id, type(error).__name__)
             if error.status == HTTPStatus.TOO_MANY_REQUESTS or error.status >= 500:
@@ -216,48 +235,50 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
                 domain=DOMAIN,
             ) from error
         except (TimeoutError, ClientError) as error:
-            error_id = (
-                "oauth_token_timeout"
-                if isinstance(error, TimeoutError)
-                else "oauth_token_network_error"
-            )
+            error_id = "cannot_connect"
             self._record_status(0, "none", "none", error_id, type(error).__name__)
             raise OAuth2TokenRequestError(
                 request_info=_oauth_request_info(),
                 history=(),
                 status=0,
-                message="healthplanet_oauth_connection_failed",
+                message=error_id,
                 headers=None,
                 domain=DOMAIN,
             ) from error
-        body = ""
+        except Exception as error:
+            error_id = "oauth_response_invalid"
+            self._record_status(0, "none", "none", error_id, type(error).__name__)
+            raise OAuth2TokenRequestError(
+                request_info=_oauth_request_info(),
+                history=(),
+                status=0,
+                message=error_id,
+                headers=None,
+                domain=DOMAIN,
+            ) from error
+        finally:
+            request_data.clear()
+            body = ""
         access_token = token.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             self._record_status(
                 int(response.status),
                 content_category,
                 response_format,
-                "oauth_token_missing" if token else "oauth_token_response_invalid",
+                "oauth_response_invalid",
             )
             raise OAuth2TokenRequestError(
                 request_info=_oauth_request_info(),
                 history=(),
                 status=0,
-                message="oauth_token_missing" if token else "oauth_token_response_invalid",
+                message="oauth_response_invalid",
                 headers=None,
                 domain=DOMAIN,
             )
-        try:
-            expires_in = int(token.get("expires_in", _UNDOCUMENTED_EXPIRY_FALLBACK_SECONDS))
-        except (TypeError, ValueError):
-            expires_in = _UNDOCUMENTED_EXPIRY_FALLBACK_SECONDS
-        if expires_in <= 0:
-            expires_in = _UNDOCUMENTED_EXPIRY_FALLBACK_SECONDS
         self._record_status(int(response.status), content_category, response_format, None)
         return {
             "access_token": access_token,
             "token_type": token.get("token_type", "Bearer"),
-            "expires_in": expires_in,
         }
 
     def _record_status(
@@ -270,10 +291,28 @@ class HealthPlanetOAuth2Implementation(LocalOAuth2Implementation):
     ) -> None:
         """Keep and log only fixed, privacy-safe OAuth metadata."""
         domain_data = getattr(self.hass, "data", {}).setdefault(DOMAIN, {})
-        domain_data["oauth_status"] = {
-            "last_oauth_http_status": http_status,
-            "last_oauth_error_id": error_id,
-        }
+        previous = domain_data.get("oauth_status")
+        status = dict(previous) if isinstance(previous, dict) else {}
+        status.update(
+            {
+                "stage": "token_exchange",
+                "response_format": response_format,
+                "content_category": content_category,
+                "exception_type": exception_type,
+                "last_attempt_result": "failed" if error_id else "success",
+            }
+        )
+        if error_id:
+            status.update(
+                {
+                    "last_oauth_http_status": http_status,
+                    "last_oauth_error_id": error_id,
+                }
+            )
+        else:
+            status.setdefault("last_oauth_http_status", None)
+            status.setdefault("last_oauth_error_id", None)
+        domain_data["oauth_status"] = status
         if error_id:
             _LOGGER.warning(
                 "HealthPlanet OAuth failed: stage=token_exchange http_status=%s "

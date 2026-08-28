@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.3 — 2026-08-28
+
+### Reliability fixes
+
+- Fixed invalid external statistic IDs for Home Assistant installations whose config-entry identifiers contain uppercase characters.
+- Fixed false installation-drift detection caused by comparing `0.2.x` with HACS `v0.2.x` strings without semantic normalization.
+- Hardened cleanup of the legacy Integration Management device.
+- Improved privacy-safe OAuth token-exchange diagnostics for real-device troubleshooting.
+- Added detection of stale HACS update metadata without bypassing HACS for installation.
+- Removed release-build version hard-coding.
+
 ## 0.2.2 — 2026-08-28
 
 ### Reliability fixes

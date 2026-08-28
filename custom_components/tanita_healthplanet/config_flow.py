@@ -77,6 +77,20 @@ _LOGGER = logging.getLogger(__package__)
 _AUTH_IMPLEMENTATION = "auth_implementation"
 _AUTHORIZATION_CODE = "authorization_code"
 _UPGRADE_TO_HYBRID = "upgrade_to_hybrid"
+_OAUTH_UI_ERRORS = {
+    "authorization_code_invalid",
+    "oauth_client_rejected",
+    "oauth_provider_unavailable",
+    "oauth_rate_limited",
+    "oauth_response_invalid",
+    "cannot_connect",
+}
+
+
+def _oauth_ui_error(error: OAuth2TokenRequestError, fallback: str) -> str:
+    """Return only a fixed, translated OAuth error identifier."""
+    message = getattr(error, "message", None)
+    return message if isinstance(message, str) and message in _OAUTH_UI_ERRORS else fallback
 
 
 def _identity(login_id: str) -> str:
@@ -177,12 +191,12 @@ class HealthPlanetConfigFlow(
             code = str(user_input.pop(_AUTHORIZATION_CODE, "")).strip()
             try:
                 access_token = await implementation.async_exchange_authorization_code(code)
-            except OAuth2TokenRequestReauthError:
-                errors["base"] = "authorization_code_invalid"
-            except OAuth2TokenRequestTransientError:
-                errors["base"] = "cannot_connect"
-            except OAuth2TokenRequestError:
-                errors["base"] = "token_exchange_failed"
+            except OAuth2TokenRequestReauthError as error:
+                errors["base"] = _oauth_ui_error(error, "authorization_code_invalid")
+            except OAuth2TokenRequestTransientError as error:
+                errors["base"] = _oauth_ui_error(error, "oauth_provider_unavailable")
+            except OAuth2TokenRequestError as error:
+                errors["base"] = _oauth_ui_error(error, "oauth_response_invalid")
             else:
                 self._oauth_data = {
                     _AUTH_IMPLEMENTATION: implementation.domain,

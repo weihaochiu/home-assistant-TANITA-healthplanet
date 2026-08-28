@@ -17,6 +17,10 @@
       "invalid_auth": "驗證失敗，請檢查輸入的憑證。",
       "invalid_hacs_update_entity": "請選擇 HealthPlanet for Home Assistant 的 HACS update entity。",
       "manual_interaction_required": "HealthPlanet 要求瀏覽器互動；本整合不會繞過安全機制。",
+      "oauth_client_rejected": "HealthPlanet 拒絕 OAuth application credentials。",
+      "oauth_provider_unavailable": "HealthPlanet OAuth 暫時無法使用，請稍後再試。",
+      "oauth_rate_limited": "HealthPlanet 暫時限制 token request 頻率，請稍後再試。",
+      "oauth_response_invalid": "HealthPlanet 回傳無效的 token response，請重新取得 authorization code 後再試。",
       "storage_confirmation_required": "必須確認 Home Assistant .storage 不是專用加密密碼庫。",
       "token_exchange_failed": "HealthPlanet token exchange 失敗，請重新取得 authorization code 後再試。"
     },
@@ -106,7 +110,10 @@
               "update_timeout": "更新逾時",
               "unsupported": "HACS update entity 無法使用",
               "busy": "安全更新已在執行",
-              "restart_failed": "重新啟動失敗"
+              "restart_failed": "重新啟動失敗",
+              "installation_drift": "安裝檔案與 HACS metadata 不一致",
+              "installation_invalid": "無法驗證安裝檔案",
+              "hacs_metadata_stale": "HACS 更新資訊過期"
             }
           }
         }

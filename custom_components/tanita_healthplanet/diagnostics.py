@@ -16,7 +16,6 @@ from .const import (
     DOMAIN,
     VERSION,
 )
-from .installation import ActualInstalledVersionVerifier
 from .models import EndpointStatus, ProviderSnapshot
 from .safe_update import get_safe_update_manager
 
@@ -101,6 +100,7 @@ async def async_get_config_entry_diagnostics(
         manager = get_safe_update_manager(hass)
         update_entity = manager.resolve_update_entity()
         update_state = hass.states.get(update_entity) if update_entity else None
+        await manager.async_capture_versions(update_state, check_github=True)
         result["safe_update"] = {
             "safe_update_supported": manager.supported,
             "hacs_update_entity_resolved": update_entity is not None,
@@ -112,23 +112,12 @@ async def async_get_config_entry_diagnostics(
             ),
             "runtime_version": VERSION,
             "disk_version": manager.disk_version,
-            "hacs_installed_version": (
-                update_state.attributes.get("installed_version") if update_state else None
-            ),
-            "hacs_latest_version": (
-                update_state.attributes.get("latest_version") if update_state else None
-            ),
+            "hacs_installed_version": manager.hacs_installed_version,
+            "hacs_latest_version": manager.hacs_latest_version,
+            "github_latest_version": manager.github_latest_version,
             "version_consistent": manager.version_consistent,
+            "update_metadata_status": manager.update_metadata_status,
         }
-        disk = await ActualInstalledVersionVerifier(hass).async_read()
-        result["safe_update"]["disk_version"] = disk.version
-        installed_version = result["safe_update"]["hacs_installed_version"]
-        result["safe_update"]["version_consistent"] = (
-            disk.error_id is None
-            and disk.version is not None
-            and isinstance(installed_version, str)
-            and disk.version == installed_version
-        )
     else:
         result["safe_update"] = {
             "safe_update_supported": False,
@@ -137,6 +126,13 @@ async def async_get_config_entry_diagnostics(
             "last_safe_update_result": None,
             "last_safe_update_stage": "idle",
             "last_completed_at": None,
+            "runtime_version": VERSION,
+            "disk_version": None,
+            "hacs_installed_version": None,
+            "hacs_latest_version": None,
+            "github_latest_version": None,
+            "version_consistent": False,
+            "update_metadata_status": "unknown",
         }
     history_sync = getattr(runtime, "history_sync", None)
     status = getattr(history_sync, "status", None)
@@ -158,6 +154,11 @@ async def async_get_config_entry_diagnostics(
     result["oauth"] = {
         "last_oauth_error_id": oauth_status.get("last_oauth_error_id"),
         "last_oauth_http_status": oauth_status.get("last_oauth_http_status"),
+        "stage": oauth_status.get("stage"),
+        "response_format": oauth_status.get("response_format"),
+        "content_category": oauth_status.get("content_category"),
+        "exception_type": oauth_status.get("exception_type"),
+        "last_attempt_result": oauth_status.get("last_attempt_result"),
     }
     if official is not None:
         statuses = getattr(official, "endpoint_statuses", {})

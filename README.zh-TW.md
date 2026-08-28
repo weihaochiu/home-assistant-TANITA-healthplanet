@@ -122,7 +122,7 @@ Diagnostics 只含來源結果、結構 row count、安全的同步 counters 與
 - Website source unavailable：檢查 Website credentials；官方 sensors 仍獨立運作。
 - Historical sync failed：current sensors 不受影響；按 device 的「同步歷史」重試。
 - HACS 顯示 latest 但 disk 仍是舊版：比對 HACS installed/latest 與 `manifest.json`，使用 HACS「Redownload」或 validated release ZIP，重新檢查 disk version，一致後才 restart。
-- HA 整合 icon 遺失：確認完整安裝 v0.2.2（包含 `brand/`）並重啟。
+- HA 整合 icon 遺失：確認完整安裝 v0.2.3（包含 `brand/`）並重啟。
 - HACS repository list 仍是 placeholder：HA local integration branding 與 HACS repository-list brand proxy 是不同路徑，可能是 HACS frontend 已知限制。
 
 更多內容見[疑難排解](docs/TROUBLESHOOTING.md)與[架構](docs/ARCHITECTURE.md)。
@@ -131,7 +131,7 @@ Diagnostics 只含來源結果、結構 row count、安全的同步 counters 與
 
 1. 更新 manifest、`VERSION`、`USER_AGENT`、CHANGELOG 與文件。
 2. 執行完整本機驗證，push `main`，並等待 Tests、HACS、Hassfest 全部成功。
-3. 建立並 push annotated stable semantic-version tag，例如 `v0.2.2`。
+3. 建立並 push annotated stable semantic-version tag，例如 `v0.2.3`。
 4. GitHub Actions 重新驗證版本一致性、測試、coverage、privacy、HACS 與 Hassfest，通過後自動發布 stable GitHub Release。
 5. HACS 透過正常 background refresh 偵測新 Release。
 

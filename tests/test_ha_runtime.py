@@ -228,7 +228,7 @@ async def test_sensor_platform_official_ids_and_unavailable_state(hass):
     assert all(
         entity.device_info["identifiers"] == {(DOMAIN, "official-entry")} for entity in entities
     )
-    assert all(entity.device_info["sw_version"] == "0.2.2" for entity in entities)
+    assert all(entity.device_info["sw_version"] == "0.2.3" for entity in entities)
 
 
 async def test_website_entries_are_isolated_and_expose_ten_metrics(hass):

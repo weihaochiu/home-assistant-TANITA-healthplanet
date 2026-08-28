@@ -7,7 +7,7 @@ from datetime import timedelta
 
 DOMAIN = "tanita_healthplanet"
 PLATFORMS = ["sensor", "button"]
-VERSION = "0.2.2"
+VERSION = "0.2.3"
 
 MODE_HYBRID = "hybrid"
 MODE_OFFICIAL_ONLY = "official_only"
@@ -84,7 +84,7 @@ WEBSITE_HYBRID_KINDS = (3, 4, 5, 6, 7, 14, 22, 23)
 WEBSITE_PRIMARY_KINDS = tuple(kind for kind in WEBSITE_KINDS if kind != 23)
 WEBSITE_REQUEST_INTERVAL_SECONDS = 1.0
 REQUEST_TIMEOUT_SECONDS = 20
-USER_AGENT = "home-assistant-TANITA-healthplanet/0.2.2"
+USER_AGENT = "home-assistant-TANITA-healthplanet/0.2.3"
 
 API_SETUP_DOCS_URL = (
     "https://github.com/weihaochiu/home-assistant-TANITA-healthplanet/"

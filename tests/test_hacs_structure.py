@@ -21,6 +21,7 @@ def test_required_hacs_integration_files_exist():
         "history.py",
         "safe_update.py",
         "installation.py",
+        "versioning.py",
         "device_info.py",
         "strings.json",
         "translations/en.json",
@@ -44,11 +45,11 @@ def test_required_hacs_integration_files_exist():
         assert (ROOT / relative).is_file()
 
 
-def test_manifest_and_hacs_metadata_are_pinned_for_v022():
+def test_manifest_and_hacs_metadata_are_pinned_for_v023():
     manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
     hacs = json.loads((ROOT / "hacs.json").read_text(encoding="utf-8"))
     assert manifest["domain"] == "tanita_healthplanet"
-    assert manifest["version"] == "0.2.2"
+    assert manifest["version"] == "0.2.3"
     assert manifest["name"] == "HealthPlanet for Home Assistant"
     assert manifest["config_flow"] is True
     assert manifest["iot_class"] == "cloud_polling"

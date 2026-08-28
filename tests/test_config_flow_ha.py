@@ -9,6 +9,7 @@ pytest.importorskip("homeassistant")
 
 from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.exceptions import OAuth2TokenRequestReauthError
 from homeassistant.helpers import config_entry_oauth2_flow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -16,6 +17,7 @@ from custom_components.tanita_healthplanet import async_migrate_entry, async_unl
 from custom_components.tanita_healthplanet.api import WebsiteApiClient
 from custom_components.tanita_healthplanet.application_credentials import (
     HealthPlanetOAuth2Implementation,
+    _oauth_request_info,
 )
 from custom_components.tanita_healthplanet.config_flow import _identity
 from custom_components.tanita_healthplanet.const import (
@@ -162,6 +164,65 @@ async def test_two_family_members_share_application_but_store_distinct_tokens(ha
         _identity("synthetic-grace"),
         _identity("synthetic-weihao"),
     }
+
+
+@pytest.mark.usefixtures("enable_custom_integrations")
+async def test_oauth_status_survives_failed_config_flow_and_preserves_existing_family(hass):
+    existing = MockConfigEntry(
+        domain=DOMAIN,
+        title="HealthPlanet - Existing",
+        data={
+            CONF_MODE: MODE_HYBRID,
+            CONF_ACCESS_TOKEN: "synthetic-existing-token-never-use",
+            CONF_LOGIN_ID: "synthetic-existing-user",
+            CONF_PASSWORD: "synthetic-existing-password-never-use",
+        },
+    )
+    existing.add_to_hass(hass)
+    original = dict(existing.data)
+    implementation, result = await _begin_new(hass, "Second family")
+
+    async def fail_exchange(code: str) -> str:
+        implementation._record_status(
+            400,
+            "json",
+            "json",
+            "authorization_code_invalid",
+            "OAuth2TokenRequestReauthError",
+        )
+        raise OAuth2TokenRequestReauthError(
+            request_info=_oauth_request_info(),
+            history=(),
+            status=400,
+            message="authorization_code_invalid",
+            headers=None,
+            domain=DOMAIN,
+        )
+
+    with patch.object(
+        implementation,
+        "async_exchange_authorization_code",
+        side_effect=fail_exchange,
+    ):
+        failed = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {"authorization_code": "synthetic-code-never-use"}
+        )
+    assert failed["type"] is FlowResultType.FORM
+    assert failed["errors"] == {"base": "authorization_code_invalid"}
+    assert existing.data == original
+    status = hass.data[DOMAIN]["oauth_status"]
+    assert status == {
+        "stage": "token_exchange",
+        "response_format": "json",
+        "content_category": "json",
+        "exception_type": "OAuth2TokenRequestReauthError",
+        "last_attempt_result": "failed",
+        "last_oauth_http_status": 400,
+        "last_oauth_error_id": "authorization_code_invalid",
+    }
+    rendered = repr(status)
+    for forbidden in original.values():
+        assert str(forbidden) not in rendered
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

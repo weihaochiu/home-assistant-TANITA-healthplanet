@@ -46,7 +46,7 @@ async def test_three_config_entries_create_exactly_one_repository_button(hass):
     assert safe_buttons[0].device_info is None
 
 
-async def test_v021_management_device_is_detached_and_removed(hass):
+async def test_legacy_management_device_cleanup_with_old_safe_update_entity(hass):
     entry = MockConfigEntry(domain=DOMAIN, title="Family")
     entry.add_to_hass(hass)
     devices = dr.async_get(hass)
@@ -64,9 +64,42 @@ async def test_v021_management_device_is_detached_and_removed(hass):
         config_entry=entry,
         device_id=legacy.id,
     )
-    remove_legacy_management_device(hass, safe_update.entity_id)
+    assert remove_legacy_management_device(hass) is True
     assert entities.async_get(safe_update.entity_id).device_id is None
     assert devices.async_get(legacy.id) is None
+    assert remove_legacy_management_device(hass) is False
+
+
+async def test_legacy_management_device_without_entities_is_removed(hass):
+    entry = MockConfigEntry(domain=DOMAIN, title="Family")
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    legacy = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, "integration_management")},
+        name="User-renamed legacy management",
+    )
+    assert remove_legacy_management_device(hass) is True
+    assert devices.async_get(legacy.id) is None
+
+
+async def test_legacy_cleanup_preserves_family_and_unrelated_devices(hass):
+    entry = MockConfigEntry(domain=DOMAIN, title="Family")
+    entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    family = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="Family",
+    )
+    unrelated = devices.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={("other_domain", "integration_management")},
+        name="Unrelated",
+    )
+    assert remove_legacy_management_device(hass) is False
+    assert devices.async_get(family.id) is not None
+    assert devices.async_get(unrelated.id) is not None
 
 
 @pytest.mark.usefixtures("enable_custom_integrations")

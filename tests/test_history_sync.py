@@ -8,11 +8,13 @@ import pytest
 pytest.importorskip("homeassistant")
 
 from homeassistant.components.recorder.models import StatisticMeanType
+from homeassistant.components.recorder.statistics import valid_statistic_id
 
 from custom_components.tanita_healthplanet.const import SOURCE_OFFICIAL, SOURCE_WEBSITE
 from custom_components.tanita_healthplanet.history import (
     HistorySyncManager,
     hourly_statistics,
+    statistic_id_for,
     statistic_metadata,
 )
 from custom_components.tanita_healthplanet.models import Measurement, ProviderSnapshot, RuntimeData
@@ -55,6 +57,16 @@ def test_metadata_is_explicitly_ha_2026_11_safe():
     assert metadata["unit_class"] == "mass"
     assert metadata["unit_of_measurement"] == "kg"
     assert "has_mean" not in metadata
+
+
+def test_statistic_id_uppercase_entry_id():
+    entry_id = "01M10K4M0P890X641ZCED5ZD07"
+    old_statistic_id = f"tanita_healthplanet:{entry_id}_1"
+    new_statistic_id = statistic_id_for(entry_id, 1)
+    assert old_statistic_id == "tanita_healthplanet:01M10K4M0P890X641ZCED5ZD07_1"
+    assert new_statistic_id == "tanita_healthplanet:01m10k4m0p890x641zced5zd07_1"
+    assert valid_statistic_id(old_statistic_id) is False
+    assert valid_statistic_id(new_statistic_id) is True
 
 
 @pytest.mark.asyncio

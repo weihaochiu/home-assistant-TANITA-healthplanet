@@ -18,23 +18,31 @@ from .safe_update import (
 )
 
 
-def remove_legacy_management_device(hass: HomeAssistant, entity_id: str) -> None:
-    """Detach Safe Update and remove only the v0.2.1 management device."""
+def remove_legacy_management_device(hass: HomeAssistant) -> bool:
+    """Safely remove only the exact v0.2.1 management registry device."""
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
 
-    entities = er.async_get(hass)
-    registry_entry = entities.async_get(entity_id)
-    if registry_entry is None or registry_entry.device_id is None:
-        return
     devices = dr.async_get(hass)
-    device = devices.async_get(registry_entry.device_id)
+    entities = er.async_get(hass)
     legacy_identifier = (DOMAIN, "integration_management")
-    if device is None or legacy_identifier not in device.identifiers:
-        return
-    legacy_device_id = registry_entry.device_id
-    entities.async_update_entity(entity_id, device_id=None)
-    devices.async_remove_device(legacy_device_id)
+    removed = False
+    for device in tuple(devices.devices.values()):
+        if set(device.identifiers) != {legacy_identifier}:
+            continue
+        attached = [item for item in entities.entities.values() if item.device_id == device.id]
+        for registry_entry in attached:
+            if (
+                registry_entry.platform == DOMAIN
+                and registry_entry.entity_id.startswith("button.")
+                and registry_entry.unique_id == f"{DOMAIN}_safe_update"
+            ):
+                entities.async_update_entity(registry_entry.entity_id, device_id=None)
+        if any(item.device_id == device.id for item in entities.entities.values()):
+            continue
+        devices.async_remove_device(device.id)
+        removed = True
+    return removed
 
 
 async def async_setup_entry(
@@ -43,6 +51,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the user-facing history control."""
+    remove_legacy_management_device(hass)
     manager = entry.runtime_data.history_sync
     entities: list[ButtonEntity] = []
     if isinstance(manager, HistorySyncManager):
@@ -102,7 +111,6 @@ class HealthPlanetSafeUpdateButton(ButtonEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        remove_legacy_management_device(self.hass, self.entity_id)
         self.async_on_remove(self._manager.async_add_listener(self.async_write_ha_state))
 
         def _update_entity_changed(event: object) -> None:

@@ -16,7 +16,10 @@ from homeassistant.components.recorder.models import (
     StatisticMeanType,
     StatisticMetaData,
 )
-from homeassistant.components.recorder.statistics import async_add_external_statistics
+from homeassistant.components.recorder.statistics import (
+    async_add_external_statistics,
+    valid_statistic_id,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
@@ -94,6 +97,14 @@ def hourly_statistics(history: Iterable[Measurement]) -> list[StatisticData]:
     ]
 
 
+def statistic_id_for(entry_id: str, kind: int) -> str:
+    """Return a stable external statistic ID accepted by Home Assistant Recorder."""
+    statistic_id = f"{DOMAIN}:{entry_id.casefold()}_{kind}"
+    if not valid_statistic_id(statistic_id):
+        raise ValueError("history_recorder_statistic_id_invalid")
+    return statistic_id
+
+
 def statistic_metadata(entry_id: str, kind: int) -> StatisticMetaData:
     """Build the explicit HA 2026.8+/2026.11-safe metadata shape."""
     metric = METRICS[kind]
@@ -102,7 +113,7 @@ def statistic_metadata(entry_id: str, kind: int) -> StatisticMetaData:
         mean_type=StatisticMeanType.ARITHMETIC,
         name=f"HealthPlanet {metric.key}",
         source=DOMAIN,
-        statistic_id=f"{DOMAIN}:{entry_id}_{kind}",
+        statistic_id=statistic_id_for(entry_id, kind),
         unit_class=_UNIT_CLASS_BY_KIND[kind],
         unit_of_measurement=metric.unit,
     )

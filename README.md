@@ -122,7 +122,7 @@ Diagnostics include source outcomes, structural row counts, safe sync counters, 
 - Website unavailable: check Website credentials; official sensors remain independent.
 - Historical sync failed: current sensors continue; retry with the device's **Sync history** button.
 - HACS says latest but disk is old: compare HACS installed/latest versions with `manifest.json`; use HACS **Redownload** or the validated release ZIP, re-check the disk version, and restart only after they agree.
-- HA integration icon missing: restart after installing the complete v0.2.2 component, including `brand/`.
+- HA integration icon missing: restart after installing the complete v0.2.3 component, including `brand/`.
 - HACS repository list still shows a placeholder: HA local integration branding and the HACS repository-list brand proxy are separate paths; this can be a HACS frontend limitation.
 
 See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECTURE.md) for more detail.
@@ -131,7 +131,7 @@ See [Troubleshooting](docs/TROUBLESHOOTING.md) and [Architecture](docs/ARCHITECT
 
 1. Update the manifest, `VERSION`, `USER_AGENT`, changelog, and documentation.
 2. Run the full local validation suite, push `main`, and wait for Tests, HACS, and Hassfest.
-3. Create and push an annotated stable semantic-version tag such as `v0.2.2`.
+3. Create and push an annotated stable semantic-version tag such as `v0.2.3`.
 4. GitHub Actions revalidates version consistency, tests, coverage, privacy, HACS, and Hassfest before automatically publishing the stable GitHub Release.
 5. HACS detects the published release through its normal background refresh.
 

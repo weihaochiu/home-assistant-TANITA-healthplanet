@@ -32,6 +32,7 @@ REQUIRED = {
     "strings.json",
     "translations/en.json",
     "translations/zh-Hant.json",
+    "versioning.py",
     "brand/icon.png",
     "brand/icon@2x.png",
 }
@@ -40,6 +41,10 @@ FORBIDDEN_PARTS = {"tests", "BACKUP", "_local_only", ".env", ".storage", "logs"}
 
 def build(output_directory: Path) -> tuple[Path, str]:
     """Create a root-layout ZIP and fail if its release contract is violated."""
+    expected_manifest = json.loads((INTEGRATION / "manifest.json").read_text(encoding="utf-8"))
+    expected_version = expected_manifest.get("version")
+    if not isinstance(expected_version, str) or not expected_version:
+        raise ValueError("release_source_version_invalid")
     output_directory.mkdir(parents=True, exist_ok=True)
     destination = output_directory / FILENAME
     files = sorted(path for path in INTEGRATION.rglob("*") if path.is_file())
@@ -66,7 +71,7 @@ def build(output_directory: Path) -> tuple[Path, str]:
             raise ValueError("release_zip_domain_mismatch")
         if manifest.get("name") != "HealthPlanet for Home Assistant":
             raise ValueError("release_zip_name_mismatch")
-        if manifest.get("version") != "0.2.2":
+        if manifest.get("version") != expected_version:
             raise ValueError("release_zip_version_mismatch")
     digest = hashlib.sha256(destination.read_bytes()).hexdigest()
     (output_directory / "SHA256SUMS.txt").write_text(f"{digest}  {FILENAME}\n", encoding="utf-8")

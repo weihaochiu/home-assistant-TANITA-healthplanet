@@ -22,7 +22,15 @@ from .const import (
     SAFE_UPDATE_RESTART_DELAY_SECONDS,
     VERSION,
 )
-from .installation import ActualInstalledVersionVerifier, DiskManifestVersion
+from .installation import (
+    STATUS_HACS_METADATA_STALE,
+    STATUS_UNKNOWN,
+    ActualInstalledVersionVerifier,
+    DiskManifestVersion,
+    InstallationVersions,
+    async_get_github_latest_version,
+)
+from .versioning import versions_equal
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -43,6 +51,7 @@ RESULT_BUSY = "busy"
 RESULT_RESTART_FAILED = "restart_failed"
 RESULT_INSTALLATION_DRIFT = "installation_drift"
 RESULT_INSTALLATION_INVALID = "installation_invalid"
+RESULT_HACS_METADATA_STALE = "hacs_metadata_stale"
 
 STAGE_IDLE = "idle"
 STAGE_RESOLVING = "resolving"
@@ -150,6 +159,7 @@ class SafeUpdateManager:
         update_entity_resolver: Callable[[], str | None] | None = None,
         backup_entity_resolver: Callable[[], str | None] | None = None,
         disk_version_reader: Callable[[], Awaitable[DiskManifestVersion]] | None = None,
+        github_latest_reader: Callable[[], Awaitable[str | None]] | None = None,
     ) -> None:
         self.hass = hass
         self._lock = asyncio.Lock()
@@ -163,6 +173,9 @@ class SafeUpdateManager:
         self._disk_version_reader = (
             disk_version_reader or ActualInstalledVersionVerifier(hass).async_read
         )
+        self._github_latest_reader = github_latest_reader or (
+            lambda: async_get_github_latest_version(hass)
+        )
         self.last_result: str | None = None
         self.last_stage = STAGE_IDLE
         self.last_completed_at: datetime | None = None
@@ -170,22 +183,40 @@ class SafeUpdateManager:
         self.disk_version: str | None = None
         self.hacs_installed_version: str | None = None
         self.hacs_latest_version: str | None = None
+        self.github_latest_version: str | None = None
         self.version_consistent = False
+        self.update_metadata_status = STATUS_UNKNOWN
+        self._github_check_complete = False
         self.last_error_id: str | None = None
 
-    async def _async_capture_versions(self, state: State | None) -> DiskManifestVersion:
+    async def async_capture_versions(
+        self, state: State | None, *, check_github: bool = False
+    ) -> DiskManifestVersion:
+        """Capture raw versions and optionally refresh the supplementary GitHub signal."""
         disk = await self._disk_version_reader()
         self.disk_version = disk.version
         installed = state.attributes.get("installed_version") if state else None
         latest = state.attributes.get("latest_version") if state else None
         self.hacs_installed_version = installed if isinstance(installed, str) else None
         self.hacs_latest_version = latest if isinstance(latest, str) else None
-        self.version_consistent = (
-            disk.error_id is None
-            and disk.version is not None
-            and self.hacs_installed_version is not None
-            and disk.version == self.hacs_installed_version
+        if check_github:
+            try:
+                github_latest = await self._github_latest_reader()
+            except Exception:
+                github_latest = None
+            self.github_latest_version = github_latest if isinstance(github_latest, str) else None
+            self._github_check_complete = self.github_latest_version is not None
+        versions = InstallationVersions(
+            runtime=self.runtime_version,
+            disk=disk.version,
+            hacs_installed=self.hacs_installed_version,
+            hacs_latest=self.hacs_latest_version,
+            disk_error_id=disk.error_id,
+            github_latest=self.github_latest_version,
+            github_check_complete=self._github_check_complete,
         )
+        self.version_consistent = versions.consistent
+        self.update_metadata_status = versions.update_metadata_status
         return disk
 
     @property
@@ -468,6 +499,17 @@ class SafeUpdateManager:
                     "Safe Update was not started."
                 )
             ),
+            RESULT_HACS_METADATA_STALE: (
+                "HealthPlanet 偵測到 GitHub 已有較新版本，但 HACS 的更新資訊尚未同步。"
+                "請前往 HACS 的 HealthPlanet repository，執行「Update information」後"
+                "再試一次安全更新。"
+                if chinese
+                else (
+                    "HealthPlanet found a newer GitHub release, but HACS update metadata "
+                    "has not synchronized yet. Open the HealthPlanet repository in HACS, "
+                    "run Update information, and then try Safe Update again."
+                )
+            ),
             RESULT_SUCCESS: (
                 "HealthPlanet 已成功更新。請重新啟動 Home Assistant 以載入新版本。"
                 if chinese
@@ -525,7 +567,7 @@ class SafeUpdateManager:
             if update_state is None or update_state.state in {"unknown", "unavailable"}:
                 await self._notify(RESULT_UNSUPPORTED, context)
                 return self._finish(RESULT_UNSUPPORTED)
-            disk_before = await self._async_capture_versions(update_state)
+            disk_before = await self.async_capture_versions(update_state, check_github=True)
             if disk_before.error_id is not None:
                 self.last_error_id = disk_before.error_id
                 await self._notify(RESULT_INSTALLATION_INVALID, context)
@@ -534,6 +576,10 @@ class SafeUpdateManager:
                 self.last_error_id = "hacs_metadata_disk_version_mismatch"
                 await self._notify(RESULT_INSTALLATION_DRIFT, context)
                 return self._finish(RESULT_INSTALLATION_DRIFT)
+            if self.update_metadata_status == STATUS_HACS_METADATA_STALE:
+                self.last_error_id = "hacs_update_metadata_stale"
+                await self._notify(RESULT_HACS_METADATA_STALE, context)
+                return self._finish(RESULT_HACS_METADATA_STALE)
             if update_state.state == "off":
                 await self._notify(RESULT_NO_UPDATE, context)
                 return self._finish(RESULT_NO_UPDATE, STAGE_COMPLETED)
@@ -545,7 +591,7 @@ class SafeUpdateManager:
                 or not expected_version
                 or not isinstance(installed_before, str)
                 or not installed_before
-                or installed_before == expected_version
+                or versions_equal(installed_before, expected_version)
                 or update_state.attributes.get("in_progress") is True
             ):
                 await self._notify(RESULT_UPDATE_FAILED, context)
@@ -575,8 +621,12 @@ class SafeUpdateManager:
             if (
                 update_state is None
                 or update_state.state != "on"
-                or update_state.attributes.get("latest_version") != expected_version
-                or update_state.attributes.get("installed_version") != installed_before
+                or not versions_equal(
+                    update_state.attributes.get("latest_version"), expected_version
+                )
+                or not versions_equal(
+                    update_state.attributes.get("installed_version"), installed_before
+                )
                 or update_state.attributes.get("in_progress") is True
             ):
                 await self._notify(RESULT_UPDATE_FAILED, context)
@@ -610,15 +660,16 @@ class SafeUpdateManager:
             except _StateUnavailableError:
                 await self._notify(RESULT_UPDATE_FAILED, context)
                 return self._finish(RESULT_UPDATE_FAILED)
-            if (
-                installed.state != "off"
-                or installed.attributes.get("installed_version") != expected_version
+            if installed.state != "off" or not versions_equal(
+                installed.attributes.get("installed_version"), expected_version
             ):
                 await self._notify(RESULT_UPDATE_FAILED, context)
                 return self._finish(RESULT_UPDATE_FAILED)
 
-            disk_after = await self._async_capture_versions(installed)
-            if disk_after.error_id is not None or disk_after.version != expected_version:
+            disk_after = await self.async_capture_versions(installed)
+            if disk_after.error_id is not None or not versions_equal(
+                disk_after.version, expected_version
+            ):
                 self.last_error_id = disk_after.error_id or "installation_version_mismatch"
                 await self._notify(RESULT_UPDATE_FAILED, context)
                 return self._finish(RESULT_UPDATE_FAILED)

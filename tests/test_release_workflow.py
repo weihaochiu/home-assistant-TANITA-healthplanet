@@ -35,14 +35,14 @@ def test_release_workflow_has_secure_gated_release_contract():
     assert "id-token: write" not in source
 
 
-def test_release_metadata_matches_v022():
+def test_release_metadata_matches_v023():
     manifest = json.loads(
         (ROOT / "custom_components" / "tanita_healthplanet" / "manifest.json").read_text(
             encoding="utf-8"
         )
     )
-    assert manifest["version"] == "0.2.2"
-    assert validate_release_metadata(ROOT, "v0.2.2") == "0.2.2"
+    assert manifest["version"] == "0.2.3"
+    assert validate_release_metadata(ROOT, "v0.2.3") == "0.2.3"
 
 
 @pytest.mark.parametrize(

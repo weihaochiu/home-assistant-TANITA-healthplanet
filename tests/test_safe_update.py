@@ -10,6 +10,7 @@ from custom_components.tanita_healthplanet.safe_update import (
     RESULT_BACKUP_FAILED,
     RESULT_BACKUP_TIMEOUT,
     RESULT_BUSY,
+    RESULT_HACS_METADATA_STALE,
     RESULT_INSTALLATION_DRIFT,
     RESULT_INSTALLATION_INVALID,
     RESULT_NO_UPDATE,
@@ -99,7 +100,11 @@ UPDATE_ENTITY = "update.renamed_healthplanet"
 BACKUP_ENTITY = "event.renamed_automatic_backup"
 
 
-def _manager(hass: FakeHass, disk_version_reader=None) -> SafeUpdateManager:
+def _manager(
+    hass: FakeHass,
+    disk_version_reader=None,
+    github_latest_reader=None,
+) -> SafeUpdateManager:
     async def disk_version() -> DiskManifestVersion:
         state = hass.states.get(UPDATE_ENTITY)
         version = state.attributes.get("installed_version") if state else None
@@ -114,6 +119,7 @@ def _manager(hass: FakeHass, disk_version_reader=None) -> SafeUpdateManager:
         update_entity_resolver=lambda: UPDATE_ENTITY,
         backup_entity_resolver=lambda: BACKUP_ENTITY,
         disk_version_reader=disk_version_reader or disk_version,
+        github_latest_reader=github_latest_reader or (lambda: _async_version("v0.2.2")),
     )
 
 
@@ -200,6 +206,64 @@ async def test_preflight_hacs_disk_drift_and_invalid_manifest_fail_closed():
     )
     assert await invalid.async_run(restart_after_update=True) == RESULT_INSTALLATION_INVALID
     assert ("backup", "create_automatic") not in _actions(hass)
+
+
+async def test_safe_update_normalized_versions():
+    hass = FakeHass()
+    _initial_states(hass)
+    hass.states.set(
+        UPDATE_ENTITY,
+        FakeState("off", {"installed_version": "v0.2.2", "latest_version": "v0.2.2"}),
+    )
+    manager = _manager(hass, lambda: _async_disk("0.2.2"))
+    assert await manager.async_run(restart_after_update=True) == RESULT_NO_UPDATE
+    assert manager.version_consistent is True
+    assert manager.last_error_id is None
+    assert ("backup", "create_automatic") not in _actions(hass)
+
+
+async def test_hacs_metadata_stale_fails_closed_before_backup():
+    hass = FakeHass()
+    _initial_states(hass)
+    hass.states.set(
+        UPDATE_ENTITY,
+        FakeState("off", {"installed_version": "v0.2.2", "latest_version": "v0.2.2"}),
+    )
+    manager = _manager(
+        hass,
+        lambda: _async_disk("0.2.2"),
+        lambda: _async_version("v0.2.3"),
+    )
+    assert await manager.async_run(restart_after_update=True) == RESULT_HACS_METADATA_STALE
+    assert manager.update_metadata_status == "hacs_metadata_stale"
+    assert manager.last_error_id == "hacs_update_metadata_stale"
+    assert ("backup", "create_automatic") not in _actions(hass)
+    assert ("update", "install") not in _actions(hass)
+    assert ("homeassistant", "restart") not in _actions(hass)
+
+
+async def test_github_failure_does_not_break_hacs_update():
+    hass = FakeHass()
+    _initial_states(hass)
+
+    async def github_failure():
+        raise TimeoutError
+
+    async def backup_hook() -> None:
+        _schedule_backup(hass)
+
+    async def update_hook() -> None:
+        _schedule_update(hass)
+
+    hass.services.hooks[("backup", "create_automatic")] = backup_hook
+    hass.services.hooks[("update", "install")] = update_hook
+    manager = _manager(hass, github_latest_reader=github_failure)
+    manager._backup_start_timeout = 0.2
+    manager._backup_completion_timeout = 0.2
+    assert await manager.async_run(restart_after_update=False) == RESULT_SUCCESS
+    assert manager.github_latest_version is None
+    assert manager.update_metadata_status == "unknown"
+    assert ("update", "install") in _actions(hass)
 
 
 async def test_post_install_disk_mismatch_never_restarts():
@@ -432,3 +496,7 @@ async def _async_disk(version: str) -> DiskManifestVersion:
 
 async def _async_disk_result(result: DiskManifestVersion) -> DiskManifestVersion:
     return result
+
+
+async def _async_version(version: str | None) -> str | None:
+    return version

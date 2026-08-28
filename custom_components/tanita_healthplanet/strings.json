@@ -17,6 +17,10 @@
       "invalid_auth": "Authentication failed. Check the supplied credentials.",
       "invalid_hacs_update_entity": "Select the HACS update entity for HealthPlanet for Home Assistant.",
       "manual_interaction_required": "HealthPlanet requires browser interaction that this integration will not bypass.",
+      "oauth_client_rejected": "HealthPlanet rejected the OAuth application credentials.",
+      "oauth_provider_unavailable": "HealthPlanet OAuth is temporarily unavailable. Try again later.",
+      "oauth_rate_limited": "HealthPlanet temporarily rate-limited the token request. Try again later.",
+      "oauth_response_invalid": "HealthPlanet returned an invalid token response. Generate a new authorization code and try again.",
       "storage_confirmation_required": "You must acknowledge that Home Assistant .storage is not a dedicated encrypted password vault.",
       "token_exchange_failed": "HealthPlanet token exchange failed. Generate a new authorization code and try again."
     },
@@ -106,7 +110,10 @@
               "update_timeout": "Update timed out",
               "unsupported": "HACS update entity unavailable",
               "busy": "Safe Update already running",
-              "restart_failed": "Restart failed"
+              "restart_failed": "Restart failed",
+              "installation_drift": "Installed files do not match HACS metadata",
+              "installation_invalid": "Installed files could not be verified",
+              "hacs_metadata_stale": "HACS update metadata is stale"
             }
           }
         }
